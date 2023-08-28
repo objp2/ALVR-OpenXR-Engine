@@ -374,12 +374,12 @@ struct OpenXrProgram final : IOpenXrProgram {
                 using namespace std::string_view_literals;
                 switch (gapi)
                 {
-                case ALXRGraphicsApi::Vulkan2:  return std::make_tuple("XR_KHR_vulkan_enable2"sv, "Vulkan2"sv);
                 case ALXRGraphicsApi::Vulkan:   return std::make_tuple("XR_KHR_vulkan_enable"sv, "Vulkan"sv);
                 case ALXRGraphicsApi::D3D12:    return std::make_tuple("XR_KHR_D3D12_enable"sv, "D3D12"sv);
                 case ALXRGraphicsApi::D3D11:    return std::make_tuple("XR_KHR_D3D11_enable"sv, "D3D11"sv);
-                case ALXRGraphicsApi::OpenGLES: return std::make_tuple("XR_KHR_opengl_es_enable"sv, "OpenGLES"sv);
-                default: return std::make_tuple("XR_KHR_opengl_enable"sv, "OpenGL"sv);
+                case ALXRGraphicsApi::Vulkan2:
+                    [[fallthrough]];
+                default: return std::make_tuple("XR_KHR_vulkan_enable2"sv, "Vulkan2"sv);
                 }
             };
             for (size_t apiIndex = ALXRGraphicsApi::Vulkan2; apiIndex < size_t(ALXRGraphicsApi::ApiCount); ++apiIndex) {
@@ -603,12 +603,6 @@ struct OpenXrProgram final : IOpenXrProgram {
 #endif
 #ifdef XR_USE_GRAPHICS_API_D3D11
         { XR_KHR_D3D11_ENABLE_EXTENSION_NAME,     false },
-#endif                                            
-#ifdef XR_USE_GRAPHICS_API_OPENGL
-        { XR_KHR_OPENGL_ENABLE_EXTENSION_NAME,    false },
-#endif
-#ifdef XR_USE_GRAPHICS_API_OPENGL_ES
-        { XR_KHR_OPENGL_ES_ENABLE_EXTENSION_NAME, false }
 #endif
     };
 

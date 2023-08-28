@@ -69,10 +69,6 @@ constexpr inline auto graphics_api_str(const ALXRGraphicsApi gcp)
         return "D3D12";
     case ALXRGraphicsApi::D3D11:
         return "D3D11";
-    case ALXRGraphicsApi::OpenGLES:
-        return "OpenGLES";
-    case ALXRGraphicsApi::OpenGL:
-        return "OpenGL";
     default:
         return "auto";
     }

@@ -17,14 +17,12 @@ extern "C" {;
 
 enum ALXRGraphicsApi : uint32_t
 {
-    Auto,
+    Auto=0,
     Vulkan2,
     Vulkan,
     D3D12,
     D3D11,
-    OpenGLES,
-    OpenGL,
-    ApiCount = OpenGL
+    ApiCount
 };
 
 enum class ALXRDecoderType : uint32_t
