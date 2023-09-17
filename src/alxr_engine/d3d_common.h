@@ -12,6 +12,7 @@
 #include <string>
 #include <filesystem>
 #include <DirectXMath.h>
+#include "xr_eigen.h"
 
 namespace ALXR {;
 
@@ -129,7 +130,7 @@ constexpr inline const std::array<const CColorType, 3> VideoClearColors { CColor
 };
 
 DirectX::XMMATRIX XM_CALLCONV LoadXrPose(const XrPosef& pose);
-DirectX::XMMATRIX XM_CALLCONV LoadXrMatrix(const XrMatrix4x4f& matrix);
+DirectX::XMMATRIX XM_CALLCONV LoadXrMatrix(const Eigen::Matrix4f& matrix);
 
 std::vector<std::uint8_t> LoadCompiledShaderObject(const std::filesystem::path& csoFile);
 Microsoft::WRL::ComPtr<ID3DBlob> CompileShader(const char* hlsl, const char* entrypoint, const char* shaderTarget);

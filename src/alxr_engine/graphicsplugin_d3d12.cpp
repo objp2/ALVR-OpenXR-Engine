@@ -14,7 +14,7 @@
 #include <variant>
 #include <thread>
 #include <chrono>
-#include <common/xr_linear.h>
+#include "xr_eigen.h"
 
 #include <DirectXColors.h>
 #include <D3Dcompiler.h>
@@ -970,11 +970,12 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
         return m_clearColorIndex;
     }
 
-    inline void MakeViewProjMatrix(DirectX::XMFLOAT4X4& viewProj, const XrCompositionLayerProjectionView& layerView) {
+    inline DirectX::XMFLOAT4X4A XM_CALLCONV MakeViewProjMatrix(const XrCompositionLayerProjectionView& layerView) {
         const XMMATRIX spaceToView = XMMatrixInverse(nullptr, ALXR::LoadXrPose(layerView.pose));
-        XrMatrix4x4f projectionMatrix;
-        XrMatrix4x4f_CreateProjectionFov(&projectionMatrix, GRAPHICS_D3D, layerView.fov, 0.05f, 100.0f);
+        Eigen::Matrix4f projectionMatrix = ALXR::CreateProjectionFov(ALXR::GraphicsAPI::D3D, layerView.fov, 0.05f, 100.0f);
+        DirectX::XMFLOAT4X4A viewProj;
         XMStoreFloat4x4(&viewProj, XMMatrixTranspose(spaceToView * ALXR::LoadXrMatrix(projectionMatrix)));
+        return viewProj;
     }
 
     virtual void RenderMultiView
@@ -1003,7 +1004,7 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
 
             ALXR::MultiViewProjectionConstantBuffer viewProjection{ {} };
             for (std::size_t viewIndex = 0; viewIndex < 2; ++viewIndex) {
-                MakeViewProjMatrix(viewProjection.ViewProjection[viewIndex], layerViews[viewIndex]);
+                viewProjection.ViewProjection[viewIndex] = MakeViewProjMatrix(layerViews[viewIndex]);
             }
 
             // Set shaders and constant buffers.
@@ -1049,9 +1050,10 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
             cmdList->OMSetRenderTargets((UINT)std::size(renderTargets), renderTargets, true, &depthStencilView);
             
             // Set shaders and constant buffers.
-            ALXR::ViewProjectionConstantBuffer viewProjection{ {}, 0 };
-            MakeViewProjMatrix(viewProjection.ViewProjection, layerView);
-
+            const ALXR::ViewProjectionConstantBuffer viewProjection {
+                .ViewProjection = MakeViewProjMatrix(layerView),
+                .ViewID = 0,
+            };
             ID3D12Resource* const viewProjectionCBuffer = swapchainContext.GetViewProjectionCBuffer();
             {
                 constexpr const D3D12_RANGE NoReadRange{ 0, 0 };

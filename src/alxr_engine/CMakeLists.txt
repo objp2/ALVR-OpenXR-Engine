@@ -25,6 +25,29 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(readerwriterqueue)
 
+FetchContent_Declare(
+  Eigen
+  GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+  # Use master branch for now until 4.0 release branch soon? https://gitlab.com/libeigen/eigen/-/issues/2699
+  GIT_TAG master
+  GIT_SHALLOW TRUE
+  GIT_PROGRESS TRUE
+)
+set(EIGEN_BUILD_DOC OFF CACHE BOOL "" FORCE)
+set(EIGEN_BUILD_PKGCONFIG OFF CACHE BOOL "" FORCE)
+set(EIGEN_BUILD_BTL OFF CACHE BOOL "" FORCE)
+set(EIGEN_BUILD_SPBENC OFF CACHE BOOL "" FORCE)
+set(EIGEN_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(EIGEN_BUILD_CMAKE_PACKAGE OFF CACHE BOOL "" FORCE)
+set(EIGEN_BUILD_BLAS OFF CACHE BOOL "" FORCE)
+set(EIGEN_BUILD_LAPACK OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+FetchContent_GetProperties(Eigen)
+if(NOT eigen_POPULATED)
+  FetchContent_Populate(Eigen)
+  add_subdirectory(${eigen_SOURCE_DIR} ${eigen_BINARY_DIR} EXCLUDE_FROM_ALL)
+endif()
+
 file(GLOB LOCAL_HEADERS "*.h")
 file(GLOB LOCAL_SOURCE "*.cpp")
 file(GLOB VULKAN_SHADERS "vulkan_shaders/*.glsl")
@@ -223,14 +246,14 @@ endif()
 if (XR_IS_UWP)
     target_link_libraries(alxr_engine OneCore.lib WindowsApp.lib)
 endif()
-target_link_libraries(alxr_engine openxr_loader alvr_common readerwriterqueue ${CUDA_LIB_LIST} ${FFMPEG_LIBS} ${ONE_API_TTB_LIBS})
+target_link_libraries(alxr_engine openxr_loader alvr_common readerwriterqueue Eigen3::Eigen ${CUDA_LIB_LIST} ${FFMPEG_LIBS} ${ONE_API_TTB_LIBS})
 
 if(TARGET openxr-gfxwrapper)
     target_link_libraries(alxr_engine openxr-gfxwrapper)
 endif()
 if(WIN32)
     if(MSVC)
-        target_compile_definitions(alxr_engine PRIVATE _CRT_SECURE_NO_WARNINGS)
+        target_compile_definitions(alxr_engine PRIVATE _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES)
         target_compile_options(alxr_engine PRIVATE /Zc:wchar_t /Zc:forScope /W3 /WX /Zi)
         target_compile_options(alxr_engine PRIVATE "$<$<NOT:$<CONFIG:Debug>>:/Zi>")
         target_link_options(alxr_engine PRIVATE "$<$<NOT:$<CONFIG:Debug>>:/DEBUG>")

@@ -24,6 +24,13 @@ constexpr inline const XrPosef InfinityPose {
     }
 };
 
+constexpr inline const XrView IdentityView{
+    .type = XR_TYPE_VIEW,
+    .next = nullptr,
+    .pose = ALXR::IdentityPose,
+    .fov = { 0,0,0,0 }
+};
+
 constexpr inline bool operator==(const XrPosef& lhs, const XrPosef& rhs) {
     return lhs.position.x == rhs.position.x &&
            lhs.position.y == rhs.position.y &&

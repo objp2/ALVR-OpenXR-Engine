@@ -15,7 +15,7 @@
     #define XR_ENABLE_VULKAN_VALIDATION_LAYER
 #endif
 
-#include <common/xr_linear.h>
+#include "xr_eigen.h"
 #include <cstring>
 #include <algorithm>
 #include <array>
@@ -1713,14 +1713,17 @@ private:
     VkDevice m_vkDevice{VK_NULL_HANDLE};
 };
 
+using f32x16 = float[16];
+
 struct alignas(16) ViewProjectionUniform {
-    XrMatrix4x4f mvp;
-    std::uint32_t ViewID;
+    f32x16 mvp;
 };
+static_assert(std::is_trivially_copyable_v<ViewProjectionUniform>);
 
 struct alignas(16) MultiViewProjectionUniform {
-    XrMatrix4x4f mvp[2];
+    f32x16 mvp[2];
 };
+static_assert(std::is_trivially_copyable_v<MultiViewProjectionUniform>);
 
 // Simple vertex MVP xform & color fragment shader layout
 struct PipelineLayout {
@@ -3133,17 +3136,11 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
         m_swapchainImageContexts.clear();
     }
 
-    static inline void MakeViewProjMatrix(XrMatrix4x4f& vp, const XrCompositionLayerProjectionView& layerView) {
-        const auto& pose = layerView.pose;
-        XrMatrix4x4f proj;
-        XrMatrix4x4f_CreateProjectionFov(&proj, GRAPHICS_VULKAN, layerView.fov, 0.05f, 100.0f);
-        XrMatrix4x4f toView;
-        constexpr static const XrVector3f scale{ 1.f, 1.f, 1.f };
-        XrMatrix4x4f_CreateTranslationRotationScale(&toView, &pose.position, &pose.orientation, &scale);
-        XrMatrix4x4f view;
-        XrMatrix4x4f_InvertRigidBody(&view, &toView);
-        //XrMatrix4x4f vp;
-        XrMatrix4x4f_Multiply(&vp, &proj, &view);
+    static inline Eigen::Matrix4f MakeViewProjMatrix(const XrCompositionLayerProjectionView& layerView) {
+        
+        const Eigen::Matrix4f proj = ALXR::CreateProjectionFov(ALXR::GraphicsAPI::Vulkan, layerView.fov, 0.05f, 100.0f);
+        const Eigen::Matrix4f view = ALXR::ToMatrix4f(layerView.pose).inverse();
+        return proj * view;
     }
 
     template < typename RenderFunc >
@@ -3278,9 +3275,9 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
 
             // Compute the view-projection transform.
             // Note all matrixes (including OpenXR's) are column-major, right-handed.
-            std::array<XrMatrix4x4f,2> vps{};
+            std::array<Eigen::Matrix4f,2> vps{};
             for (std::size_t viewIndex = 0; viewIndex < layerViews.size(); ++viewIndex) {
-                MakeViewProjMatrix(vps[viewIndex], layerViews[viewIndex]);
+                vps[viewIndex] = MakeViewProjMatrix(layerViews[viewIndex]);
             }
 
             // Render each cube
@@ -3288,9 +3285,9 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
                 // Compute the model-view-projection transform and push it.
                 MultiViewProjectionUniform mvps;
                 for (std::size_t viewIndex = 0; viewIndex < layerViews.size(); ++viewIndex) {
-                    XrMatrix4x4f model;
-                    XrMatrix4x4f_CreateTranslationRotationScale(&model, &cube.Pose.position, &cube.Pose.orientation, &cube.Scale);
-                    XrMatrix4x4f_Multiply(&mvps.mvp[viewIndex], &vps[viewIndex], &model);
+                    const Eigen::Affine3f model = ALXR::CreateTRS(cube.Pose, cube.Scale);
+                    const Eigen::Matrix4f mvp = (vps[viewIndex] * model).matrix();
+                    std::memcpy(mvps.mvp[viewIndex], mvp.data(), sizeof(f32x16));
                 }
                 vkCmdPushConstants(m_cmdBuffer.buf, m_pipelineLayout.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MultiViewProjectionUniform), &mvps);
 
@@ -3331,17 +3328,14 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
 
             // Compute the view-projection transform.
             // Note all matrixes (including OpenXR's) are column-major, right-handed.
-            XrMatrix4x4f vp;
-            MakeViewProjMatrix(vp, layerView);
+            const Eigen::Matrix4f vp = MakeViewProjMatrix(layerView);
 
             // Render each cube
             for (const Cube& cube : cubes) {
                 // Compute the model-view-projection transform and push it.
-                XrMatrix4x4f model;
-                XrMatrix4x4f_CreateTranslationRotationScale(&model, &cube.Pose.position, &cube.Pose.orientation, &cube.Scale);
-                XrMatrix4x4f mvp;
-                XrMatrix4x4f_Multiply(&mvp, &vp, &model);
-                vkCmdPushConstants(m_cmdBuffer.buf, m_pipelineLayout.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(mvp.m), &mvp.m[0]);
+                const Eigen::Affine3f model = ALXR::CreateTRS(cube.Pose, cube.Scale);
+                alignas(16) const Eigen::Matrix4f mvp = (vp * model).matrix();
+                vkCmdPushConstants(m_cmdBuffer.buf, m_pipelineLayout.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ViewProjectionUniform), mvp.data());
 
                 // Draw the cube.
                 vkCmdDrawIndexed(m_cmdBuffer.buf, m_drawBuffer.count.idx, 1, 0, 0, 0);

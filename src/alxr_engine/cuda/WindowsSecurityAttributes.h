@@ -1,5 +1,6 @@
 #pragma once
 #ifdef XR_USE_PLATFORM_WIN32
+#include <cassert>
 #include <aclapi.h>
 
 namespace {

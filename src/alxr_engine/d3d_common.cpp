@@ -8,7 +8,6 @@
 #if defined(XR_USE_GRAPHICS_API_D3D11) || defined(XR_USE_GRAPHICS_API_D3D12)
 #include <filesystem>
 #include <fstream>
-#include <common/xr_linear.h>
 #include <DirectXColors.h>
 #include <D3Dcompiler.h>
 
@@ -25,9 +24,8 @@ XMMATRIX XM_CALLCONV LoadXrPose(const XrPosef& pose) {
                                         XMLoadFloat3(reinterpret_cast<const XMFLOAT3*>(&pose.position)));
 }
 
-XMMATRIX XM_CALLCONV LoadXrMatrix(const XrMatrix4x4f& matrix) {
-    // XrMatrix4x4f has same memory layout as DirectX Math (Row-major,post-multiplied = column-major,pre-multiplied)
-    return XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(&matrix));
+XMMATRIX XM_CALLCONV LoadXrMatrix(const Eigen::Matrix4f& matrix) {
+    return XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(matrix.data()));
 }
 
 std::vector<std::uint8_t> LoadCompiledShaderObject(const std::filesystem::path& csoFile) {

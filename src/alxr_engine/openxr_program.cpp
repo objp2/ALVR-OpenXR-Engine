@@ -11,7 +11,7 @@
 #include "platformplugin.h"
 #include "graphicsplugin.h"
 #include "openxr_program.h"
-#include <common/xr_linear.h>
+#include "xr_eigen.h"
 #include <type_traits>
 #include <array>
 #include <cmath>
@@ -100,48 +100,7 @@ inline XrEnvironmentBlendMode GetXrEnvironmentBlendMode(const std::string& envir
 }
 
 namespace Math {
-template < typename RealT >
-constexpr inline RealT ToDegrees(const RealT radians)
-{
-    return static_cast<RealT>(radians * (180.0 / 3.14159265358979323846));
-}
-
-inline void XrMatrix4x4f_CreateFromPose(XrMatrix4x4f& m, const XrPosef& pose)
-{
-    constexpr const XrVector3f scale{ 1.0f,1.0f,1.0f };
-    XrMatrix4x4f_CreateTranslationRotationScale(&m, &pose.position, &pose.orientation, &scale);
-}
-
-inline XrMatrix4x4f XrMatrix4x4f_CreateFromPose(const XrPosef& pose)
-{
-    XrMatrix4x4f ret;
-    XrMatrix4x4f_CreateFromPose(ret, pose);
-    return ret;
-}
-
 namespace Pose {
-constexpr inline XrPosef Identity() {
-    XrPosef t{};
-    t.orientation.w = 1;
-    return t;
-}
-
-constexpr inline XrPosef Translation(const XrVector3f& translation) {
-    XrPosef t = Identity();
-    t.position = translation;
-    return t;
-}
-
-inline XrPosef RotateCCWAboutYAxis(float radians, XrVector3f translation) {
-    XrPosef t = Identity();
-    t.orientation.x = 0.f;
-    t.orientation.y = std::sin(radians * 0.5f);
-    t.orientation.z = 0.f;
-    t.orientation.w = std::cos(radians * 0.5f);
-    t.position = translation;
-    return t;
-}
-
 constexpr bool IsPoseValid(XrSpaceLocationFlags locationFlags) {
     constexpr const XrSpaceLocationFlags PoseValidFlags = XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
     return (locationFlags & PoseValidFlags) == PoseValidFlags;
@@ -211,6 +170,22 @@ constexpr inline XrReferenceSpaceType ToXrReferenceSpaceType(const ALXRTrackingS
 }
 
 inline XrReferenceSpaceCreateInfo GetXrReferenceSpaceCreateInfo(const std::string_view& referenceSpaceTypeStr) {
+    constexpr auto Translation = [](const XrVector3f& translation) -> XrPosef {
+        XrPosef t = ALXR::IdentityPose;
+        t.position = translation;
+        return t;
+    };
+    constexpr auto RotateCCWAboutYAxis = [](float radians, XrVector3f translation) -> XrPosef {
+        return XrPosef {
+            .orientation {
+                .x = 0.f,
+                .y = std::sin(radians * 0.5f),
+                .z = 0.f,
+                .w = std::cos(radians * 0.5f),
+            },
+            .position = translation,
+        };
+    };
     XrReferenceSpaceCreateInfo referenceSpaceCreateInfo{
         .type = XR_TYPE_REFERENCE_SPACE_CREATE_INFO,
         .next = nullptr,
@@ -220,28 +195,28 @@ inline XrReferenceSpaceCreateInfo GetXrReferenceSpaceCreateInfo(const std::strin
         referenceSpaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
     } else if (EqualsIgnoreCase(referenceSpaceTypeStr, "ViewFront")) {
         // Render head-locked 2m in front of device.
-        referenceSpaceCreateInfo.poseInReferenceSpace = Math::Pose::Translation({ 0.f, 0.f, -2.f });
+        referenceSpaceCreateInfo.poseInReferenceSpace = Translation({ 0.f, 0.f, -2.f });
         referenceSpaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
     } else if (EqualsIgnoreCase(referenceSpaceTypeStr, "LocalFloor")) {
         referenceSpaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL_FLOOR_EXT;
     } else if (EqualsIgnoreCase(referenceSpaceTypeStr, "Local")) {
         referenceSpaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
     } else if (EqualsIgnoreCase(referenceSpaceTypeStr, "ALXRLocal")) {
-        referenceSpaceCreateInfo.poseInReferenceSpace = Math::Pose::Translation({ 0.f, -1.4f,0.f });
+        referenceSpaceCreateInfo.poseInReferenceSpace = Translation({ 0.f, -1.4f,0.f });
         referenceSpaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
     } else if (EqualsIgnoreCase(referenceSpaceTypeStr, "Stage")) {
         referenceSpaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
     } else if (EqualsIgnoreCase(referenceSpaceTypeStr, "StageLeft")) {
-        referenceSpaceCreateInfo.poseInReferenceSpace = Math::Pose::RotateCCWAboutYAxis(0.f, {-2.f, 0.f, -2.f});
+        referenceSpaceCreateInfo.poseInReferenceSpace = RotateCCWAboutYAxis(0.f, {-2.f, 0.f, -2.f});
         referenceSpaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
     } else if (EqualsIgnoreCase(referenceSpaceTypeStr, "StageRight")) {
-        referenceSpaceCreateInfo.poseInReferenceSpace = Math::Pose::RotateCCWAboutYAxis(0.f, {2.f, 0.f, -2.f});
+        referenceSpaceCreateInfo.poseInReferenceSpace = RotateCCWAboutYAxis(0.f, {2.f, 0.f, -2.f});
         referenceSpaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
     } else if (EqualsIgnoreCase(referenceSpaceTypeStr, "StageLeftRotated")) {
-        referenceSpaceCreateInfo.poseInReferenceSpace = Math::Pose::RotateCCWAboutYAxis(3.14f / 3.f, {-2.f, 0.5f, -2.f});
+        referenceSpaceCreateInfo.poseInReferenceSpace = RotateCCWAboutYAxis(3.14f / 3.f, {-2.f, 0.5f, -2.f});
         referenceSpaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
     } else if (EqualsIgnoreCase(referenceSpaceTypeStr, "StageRightRotated")) {
-        referenceSpaceCreateInfo.poseInReferenceSpace = Math::Pose::RotateCCWAboutYAxis(-3.14f / 3.f, {2.f, 0.5f, -2.f});
+        referenceSpaceCreateInfo.poseInReferenceSpace = RotateCCWAboutYAxis(-3.14f / 3.f, {2.f, 0.5f, -2.f});
         referenceSpaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
     } else if (EqualsIgnoreCase(referenceSpaceTypeStr, "UboundedMSFT")) {
         referenceSpaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_UNBOUNDED_MSFT;
@@ -255,30 +230,35 @@ inline XrReferenceSpaceCreateInfo GetXrReferenceSpaceCreateInfo(const ALXRTracki
     return GetXrReferenceSpaceCreateInfo(ToTrackingSpaceName(ts));
 }
 
-constexpr inline ALXRVector3f ToALXRVector3f(const XrVector3f& v)
-{
+constexpr inline ALXRVector3f ToALXRVector3f(const XrVector3f& v) {
     return { v.x, v.y, v.z };
 }
 
-constexpr inline ALXRQuaternionf ToALXRQuaternionf(const XrQuaternionf& v)
-{
+/*constexpr*/ inline ALXRVector3f ToALXRVector3f(const Eigen::Vector3f& v) {
+    return { v.x(), v.y(), v.z() };
+}
+
+constexpr inline ALXRQuaternionf ToALXRQuaternionf(const XrQuaternionf& v) {
     return { v.x, v.y, v.z, v.w };
 }
 
-constexpr inline ALXRPosef ToALXRPosef(const XrPosef& p)
-{
+/*constexpr*/ inline ALXRQuaternionf ToALXRQuaternionf(const Eigen::Quaternionf& v) {
+    return { v.x(), v.y(), v.z(), v.w() };
+}
+
+constexpr inline ALXRPosef ToALXRPosef(const XrPosef& p) {
     return { 
         .orientation = ToALXRQuaternionf(p.orientation),
         .position    = ToALXRVector3f(p.position),
     };
 }
 
-constexpr inline const XrView IdentityView {
-    .type = XR_TYPE_VIEW,
-    .next = nullptr,
-    .pose = ALXR::IdentityPose,
-    .fov = { 0,0,0,0 }
-};
+/*constexpr*/ inline ALXRPosef ToALXRPosef(const Eigen::Affine3f& p) {
+    return {
+        .orientation = ToALXRQuaternionf(Eigen::Quaternionf{p.rotation()}),
+        .position    = ToALXRVector3f(p.translation()),
+    };
+}
 
 constexpr inline XrHandJointEXT GetJointParent(const XrHandJointEXT h)
 {
@@ -1681,12 +1661,11 @@ struct OpenXrProgram final : IOpenXrProgram {
         createHandTracker(m_input.handTrackers[1], XR_HAND_RIGHT_EXT);
 
         auto& leftHandBaseOrientation = m_input.handTrackers[0].baseOrientation;
-        auto& rightHandBaseOrientation = m_input.handTrackers[1].baseOrientation;   
-        XrMatrix4x4f zRot;
-        XrMatrix4x4f& yRot = rightHandBaseOrientation;
-        XrMatrix4x4f_CreateRotation(&yRot, 0.0, -90.0f, 0.0f);
-        XrMatrix4x4f_CreateRotation(&zRot, 0.0, 0.0f, 180.0f);
-        XrMatrix4x4f_Multiply(&leftHandBaseOrientation, &yRot, &zRot);
+        auto& rightHandBaseOrientation = m_input.handTrackers[1].baseOrientation;
+        auto& yRot = rightHandBaseOrientation;
+        yRot = Eigen::AngleAxisf(ALXR::ToRadians(-90.0f), Eigen::Vector3f(0, 1, 0));
+        const Eigen::Quaternionf zRot(Eigen::AngleAxisf(ALXR::ToRadians(180.0f), Eigen::Vector3f(0,0,1)));
+        leftHandBaseOrientation = yRot * zRot;
         return true;
     }
 
@@ -2200,7 +2179,7 @@ struct OpenXrProgram final : IOpenXrProgram {
         }
 
         // Create and cache view buffer for xrLocateViews later.
-        m_views.resize(viewCount, IdentityView);
+        m_views.resize(viewCount, ALXR::IdentityView);
         if (viewCount < 2)
             return;
 
@@ -2493,7 +2472,7 @@ struct OpenXrProgram final : IOpenXrProgram {
                                             IsRuntime(OxrRuntimeType::SteamVR) ||
                                             IsRuntime(OxrRuntimeType::WMR) ||
                                             IsRuntime(OxrRuntimeType::MagicLeap);
-        std::array<XrMatrix4x4f, XR_HAND_JOINT_COUNT_EXT> oculusOrientedJointPoses;
+        std::array<Eigen::Affine3f, XR_HAND_JOINT_COUNT_EXT> oculusOrientedJointPoses;
         for (const auto hand : { Side::LEFT,Side::RIGHT })
         {
             auto& controller = controllerInfo[hand];
@@ -2535,15 +2514,12 @@ struct OpenXrProgram final : IOpenXrProgram {
             for (size_t jointIdx = 0; jointIdx < XR_HAND_JOINT_COUNT_EXT; ++jointIdx)
             {
                 const auto& jointLoc = jointLocations[jointIdx];
-                XrMatrix4x4f& jointMatFixed = oculusOrientedJointPoses[jointIdx];
-                if (!Math::Pose::IsPoseValid(jointLoc))
-                {
-                    XrMatrix4x4f_CreateIdentity(&jointMatFixed);
+                Eigen::Affine3f& jointMatFixed = oculusOrientedJointPoses[jointIdx];
+                jointMatFixed.setIdentity();
+                if (!Math::Pose::IsPoseValid(jointLoc)) {
                     continue;
                 }
-                const auto jointMat = Math::XrMatrix4x4f_CreateFromPose(jointLoc.pose);
-                XrMatrix4x4f_CreateIdentity(&jointMatFixed);
-                XrMatrix4x4f_Multiply(&jointMatFixed, &jointMat, &handBaseOrientation);
+                jointMatFixed = ALXR::ToAffine3f(jointLoc.pose) * handBaseOrientation;
             }
             
             for (size_t boneIndex = 0; boneIndex < ALVR_HAND::alvrHandBone_MaxSkinnable; ++boneIndex)
@@ -2553,37 +2529,26 @@ struct OpenXrProgram final : IOpenXrProgram {
                 boneRot = { 0,0,0,1 };
                 bonePos = { 0,0,0 };
                 
-                const auto xrJoint = ToXRHandJointType(static_cast<ALVR_HAND>(boneIndex));
+                const auto xrJoint = ToXRHandJointType(static_cast<const ALVR_HAND>(boneIndex));
                 if (xrJoint == XR_HAND_JOINT_MAX_ENUM_EXT)
                     continue;
 
                 const auto xrJointParent = GetJointParent(xrJoint);
-                const XrMatrix4x4f& jointParentWorld = oculusOrientedJointPoses[xrJointParent];
-                const XrMatrix4x4f& JointWorld       = oculusOrientedJointPoses[xrJoint];
+                const Eigen::Affine3f& jointParentWorld = oculusOrientedJointPoses[xrJointParent];
+                const Eigen::Affine3f& JointWorld       = oculusOrientedJointPoses[xrJoint];
 
-                XrMatrix4x4f jointLocal, jointParentInv;
-                XrMatrix4x4f_InvertRigidBody(&jointParentInv, &jointParentWorld);
-                XrMatrix4x4f_Multiply(&jointLocal, &jointParentInv, &JointWorld);
+                const Eigen::Affine3f jointLocal = jointParentWorld.inverse() * JointWorld;
 
-                XrQuaternionf localizedRot;
-                XrMatrix4x4f_GetRotation(&localizedRot, &jointLocal);
-                XrVector3f localizedPos;
-                XrMatrix4x4f_GetTranslation(&localizedPos, &jointLocal);
-
+                const Eigen::Quaternionf localizedRot(jointLocal.rotation());
                 boneRot = ToALXRQuaternionf(localizedRot);
-                bonePos = ToALXRVector3f(localizedPos);
+                bonePos = ToALXRVector3f(jointLocal.translation());
             }
 
             controller.enabled = true;
             controller.isHand = true;
 
-            const XrMatrix4x4f& palmMatP = oculusOrientedJointPoses[XR_HAND_JOINT_PALM_EXT];
-            XrQuaternionf palmRot;
-            XrVector3f palmPos;
-            XrMatrix4x4f_GetTranslation(&palmPos, &palmMatP);
-            XrMatrix4x4f_GetRotation(&palmRot, &palmMatP);
-            controller.boneRootPose.orientation = ToALXRQuaternionf(palmRot);
-            controller.boneRootPose.position    = ToALXRVector3f(palmPos);            
+            const Eigen::Affine3f& palmMatP = oculusOrientedJointPoses[XR_HAND_JOINT_PALM_EXT];
+            controller.boneRootPose    = ToALXRPosef(palmMatP);
             controller.linearVelocity  = { 0,0,0 };
             controller.angularVelocity = { 0,0,0 };
         }
@@ -3356,21 +3321,19 @@ struct OpenXrProgram final : IOpenXrProgram {
 
     static inline ALXREyeInfo GetEyeInfo(const XrView& left_view, const XrView& right_view)
     {
-        XrVector3f v;
-        XrVector3f_Sub(&v, &right_view.pose.position, &left_view.pose.position);
-        float ipd = std::fabs(XrVector3f_Length(&v));
+        const Eigen::Vector3f v = ALXR::ToVector3f(right_view.pose.position) - ALXR::ToVector3f(left_view.pose.position);
+        float ipd = std::fabs(v.stableNorm());
         if (ipd < 0.00001f)
             ipd = 0.063f;
-        constexpr const auto ToEyeFov = [](const XrFovf& fov) -> EyeFov
-        {
-            return EyeFov{
+        constexpr const auto ToEyeFov = [](const XrFovf& fov) -> EyeFov {
+            return EyeFov {
                 .left   = fov.angleLeft,
                 .right  = fov.angleRight,
                 .top    = fov.angleUp,
                 .bottom = fov.angleDown
             };
         };
-        return ALXREyeInfo{
+        return ALXREyeInfo {
             .eyeFov = {
                 ToEyeFov(left_view.fov),
                 ToEyeFov(right_view.fov)
@@ -3386,7 +3349,7 @@ struct OpenXrProgram final : IOpenXrProgram {
 
     virtual inline bool GetEyeInfo(ALXREyeInfo& eyeInfo, const XrTime& time) const override
     {
-        std::array<XrView, 2> newViews{ IdentityView, IdentityView };
+        std::array<XrView, 2> newViews{ ALXR::IdentityView, ALXR::IdentityView };
         LocateViews(time, static_cast<const std::uint32_t>(newViews.size()), newViews.data());
         eyeInfo = GetEyeInfo(newViews[0], newViews[1]);
         return true;
@@ -3415,7 +3378,7 @@ struct OpenXrProgram final : IOpenXrProgram {
         const auto predicatedDisplayTimeXR = xrTimeStamp + totalLatencyOffsetNs;      
         const auto predicatedDisplayTimeNs = static_cast<std::uint64_t>(timeStampNs + totalLatencyOffsetNs);
 
-        std::array<XrView, 2> newViews { IdentityView, IdentityView };
+        std::array<XrView, 2> newViews { ALXR::IdentityView, ALXR::IdentityView };
         LocateViews(predicatedDisplayTimeXR, (const std::uint32_t)newViews.size(), newViews.data());
         {
             std::unique_lock<std::shared_mutex> lock(m_trackingFrameMapMutex);
@@ -3836,7 +3799,7 @@ struct OpenXrProgram final : IOpenXrProgram {
         {
             std::array<XrHandJointLocationEXT, XR_HAND_JOINT_COUNT_EXT> jointLocations;
             //std::array<XrHandJointVelocityEXT, XR_HAND_JOINT_COUNT_EXT> jointVelocities;
-            XrMatrix4x4f baseOrientation;
+            Eigen::Quaternionf baseOrientation;
             XrHandTrackerEXT tracker{ XR_NULL_HANDLE };
         };
         std::array<HandTrackerData, Side::COUNT> handTrackers;
