@@ -917,7 +917,7 @@ struct Texture {
             .tiling = imageTiling,
             .usage = usage,
             .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-            .initialLayout = m_vkLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            .initialLayout = m_vkLayout = VK_IMAGE_LAYOUT_UNDEFINED,
         };
         CHECK_VKCMD(vkCreateImage(device, &imageInfo, nullptr, &texImage));
 
@@ -976,7 +976,7 @@ struct Texture {
                 // Get memory requirement for each plane
                 VkMemoryRequirements2 memoryRequirements2 {
                     .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
-                    .pNext = &imagePlaneMemoryRequirementsInfo,
+                    .pNext = nullptr,
                 };
                 vkGetImageMemoryRequirements2(device, &imageMemoryRequirementsInfo2, &memoryRequirements2);
 
@@ -3472,6 +3472,7 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
         const VkDescriptorPoolCreateInfo poolInfo {
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
             .pNext = nullptr,
+            .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
             .maxSets = swapChainCount,
             .poolSizeCount = static_cast<std::uint32_t>(poolSizes.size()),
             .pPoolSizes = poolSizes.data()
@@ -4035,14 +4036,14 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
             auto& newCurrentTexture = m_videoTextures[VidTextureIndex::Current];
             m_videoTextures[VidTextureIndex::DeferredDelete] = std::move(newCurrentTexture);
             newCurrentTexture = std::move(newVideoTex);
-            UpdateVideoTextureBinding(newCurrentTexture);
+            m_isVideoTextureBindingsDirty = true;
         }
 #else
         textureIdx = m_renderTex.load();
         if (textureIdx == std::size_t(-1) || textureIdx == m_lastTexIndex)
             return;
-        UpdateVideoTextureBinding(textureIdx);
         m_lastTexIndex = textureIdx;
+        m_isVideoTextureBindingsDirty = true;
 #endif
     }
 
@@ -4285,14 +4286,21 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
             swapchainContext.BindRenderTarget(imageIndex, /*out*/ renderPassBeginInfo);
 
 #ifdef XR_USE_PLATFORM_ANDROID
-            auto& currentTexture = m_videoTextures[VidTextureIndex::Current];
-            if (currentTexture.texture.texImage == VK_NULL_HANDLE)
-                return;
-            currentTexture.texture.TransitionLayout(m_cmdBuffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            constexpr const std::size_t VidTextureIndex = VidTextureIndex::Current;
 #else
             if (textureIdx == std::size_t(-1))
                 return;
+            const std::size_t VidTextureIndex = textureIdx;
 #endif
+            auto& currentTexture = m_videoTextures[VidTextureIndex];
+            if (currentTexture.texture.texImage == VK_NULL_HANDLE)
+                return;
+            if (m_isVideoTextureBindingsDirty) {
+                m_isVideoTextureBindingsDirty = false;
+                UpdateVideoTextureBinding(currentTexture);
+            }
+            currentTexture.texture.TransitionLayout(m_cmdBuffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
             vkCmdBeginRenderPass(m_cmdBuffer.buf, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
             vkCmdBindPipeline(m_cmdBuffer.buf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_videoStreamPipelines[static_cast<std::size_t>(newMode)].pipe);
@@ -4324,14 +4332,21 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
             swapchainContext.BindRenderTarget(imageIndex, /*out*/ renderPassBeginInfo);
 
 #ifdef XR_USE_PLATFORM_ANDROID
-            auto& currentTexture = m_videoTextures[VidTextureIndex::Current];
-            if (currentTexture.texture.texImage == VK_NULL_HANDLE)
-                return;
-            currentTexture.texture.TransitionLayout(m_cmdBuffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            constexpr const std::size_t VidTextureIndex = VidTextureIndex::Current;
 #else
             if (textureIdx == std::size_t(-1))
                 return;
+            const std::size_t VidTextureIndex = textureIdx;
 #endif
+            auto& currentTexture = m_videoTextures[VidTextureIndex];
+            if (currentTexture.texture.texImage == VK_NULL_HANDLE)
+                return;
+            if (m_isVideoTextureBindingsDirty) {
+                m_isVideoTextureBindingsDirty = false;
+                UpdateVideoTextureBinding(currentTexture);
+            }
+            currentTexture.texture.TransitionLayout(m_cmdBuffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
             vkCmdBeginRenderPass(m_cmdBuffer.buf, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
             vkCmdBindPipeline(m_cmdBuffer.buf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_videoStreamPipelines[static_cast<std::size_t>(mode)].pipe);
@@ -4613,6 +4628,7 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
     
     bool m_noServerFramerateLock = false;
     bool m_noFrameSkip = false;
+    bool m_isVideoTextureBindingsDirty{ true };
 
 // END VIDEO STREAM DATA /////////////////////////////////////////////////////////////
 
