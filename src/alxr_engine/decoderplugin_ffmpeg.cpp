@@ -238,13 +238,16 @@ struct FFMPEGDecoderPlugin final : public IDecoderPlugin {
     using IOpenXrProgramPtr = std::shared_ptr<IOpenXrProgram>;
     using ALXRClientCtxPtr  = std::shared_ptr<const ALXRClientCtx>;
 
+    IDecoderPlugin::RunCtx m_ctx;
+
     AVPacketQueue/*Ptr*/ m_avPacketQueue;
     AVPixelFormat        m_hwPixFmt = AV_PIX_FMT_NONE;
     
     virtual ~FFMPEGDecoderPlugin() override {}
 
-    FFMPEGDecoderPlugin()
-    : m_avPacketQueue(360) //std::make_shared<AVPacketQueue>(360))
+    FFMPEGDecoderPlugin(const IDecoderPlugin::RunCtx& ctx)
+    : m_ctx{ ctx }
+    , m_avPacketQueue{ 360 }
     {
         static std::once_flag reg_devices_once{};
         std::call_once(reg_devices_once, []()
@@ -280,20 +283,20 @@ struct FFMPEGDecoderPlugin final : public IDecoderPlugin {
         return true;
     }
 
-    virtual bool Run(const IDecoderPlugin::RunCtx& ctx, IDecoderPlugin::shared_bool& isRunningToken) override
+    virtual bool Run(IDecoderPlugin::shared_bool& isRunningToken) override
     {
         using AVCodecContextPtr = make_av_ptr_type2<AVCodecContext, avcodec_free_context>;
         using AVFramePtr = make_av_ptr_type2<AVFrame, av_frame_free>;
         using AVBufferRefPtr = make_av_ptr_type2<AVBufferRef, av_buffer_unref>;
 
-        if (!isRunningToken) {
+        if (!isRunningToken || m_ctx.programPtr == nullptr) {
             Log::Write(Log::Level::Warning, "Decoder run parameters not valid.");
             return false;
         }
 
         const auto graphicsPluginPtr = [&]() -> GraphicsPluginPtr
         {
-            if (const auto programPtr = ctx.programPtr)
+            if (const auto programPtr = m_ctx.programPtr)
                 return programPtr->GetGraphicsPlugin();
             return nullptr;
         }();
@@ -302,7 +305,7 @@ struct FFMPEGDecoderPlugin final : public IDecoderPlugin {
             return false;
         }
 
-        const auto type = ToAVHWDeviceType(ctx.decoderType);
+        const auto type = ToAVHWDeviceType(m_ctx.decoderType);
         if (type == AV_HWDEVICE_TYPE_NONE) {
             Log::Write(Log::Level::Info, "No hw-accelerated device selected, falling back to sw-decoder");
         }
@@ -311,16 +314,16 @@ struct FFMPEGDecoderPlugin final : public IDecoderPlugin {
         const auto codecPtr = [&]()
         {
             //const auto decodeName = "hevc_mediacodec"; // "hevc_nvdec"; //"hevc_cuvid"; // hevc_cuvid";//"hevc_mediacodec";
-            if (ctx.decoderType == ALXRDecoderType::CUVID)
-                return avcodec_find_decoder_by_name(CuvidDecoderName(ctx.config.codecType));
-            return avcodec_find_decoder(ToAVCodecID(ctx.config.codecType)); //avcodec_find_decoder_by_name(decodeName);
+            if (m_ctx.decoderType == ALXRDecoderType::CUVID)
+                return avcodec_find_decoder_by_name(CuvidDecoderName(m_ctx.config.codecType));
+            return avcodec_find_decoder(ToAVCodecID(m_ctx.config.codecType)); //avcodec_find_decoder_by_name(decodeName);
         }();
         if (codecPtr == nullptr) {
             Log::Write(Log::Level::Error, "Failed to find decoder.");
             return false;
         }
 
-        Log::Write(Log::Level::Info, Fmt("Selected decoder: %s / hw-device: %s", ToString(ctx.decoderType), hwdeviceName));
+        Log::Write(Log::Level::Info, Fmt("Selected decoder: %s / hw-device: %s", ToString(m_ctx.decoderType), hwdeviceName));
         Log::Write(Log::Level::Info, Fmt("Selected codec: %s", codecPtr->name));
 
         m_hwPixFmt = AV_PIX_FMT_NONE;
@@ -351,7 +354,7 @@ struct FFMPEGDecoderPlugin final : public IDecoderPlugin {
         }
         CHECK(codecCtx->opaque == nullptr);
         codecCtx->opaque = this;
-        const char* const tuneParamStr = ctx.config.codecType == ALXRCodecType::HEVC_CODEC ?
+        const char* const tuneParamStr = m_ctx.config.codecType == ALXRCodecType::HEVC_CODEC ?
             "zerolatency" : "fastdecode,zerolatency";
         av_opt_set(codecCtx->priv_data, "preset", "ultrafast", 0);
         av_opt_set(codecCtx->priv_data, "tune", tuneParamStr, 0);
@@ -361,7 +364,7 @@ struct FFMPEGDecoderPlugin final : public IDecoderPlugin {
             codecCtx->thread_count = 1;
         }
         else {
-            codecCtx->thread_count = std::max(1u, ctx.config.cpuThreadCount);
+            codecCtx->thread_count = std::max(1u, m_ctx.config.cpuThreadCount);
         }
         Log::Write(Log::Level::Info, Fmt("Decoder thread count: %d", codecCtx->thread_count));
 
@@ -414,7 +417,7 @@ struct FFMPEGDecoderPlugin final : public IDecoderPlugin {
             return false;
         }
 
-        const auto [CreateVideoTextures, UpdateVideoTextures, isBufferInteropSupported] = GetVideoTextureMemFuns(ctx.decoderType);
+        const auto [CreateVideoTextures, UpdateVideoTextures, isBufferInteropSupported] = GetVideoTextureMemFuns(m_ctx.decoderType);
         assert(CreateVideoTextures != nullptr && UpdateVideoTextures != nullptr);
                 
         using namespace std::literals::chrono_literals;
@@ -466,9 +469,9 @@ struct FFMPEGDecoderPlugin final : public IDecoderPlugin {
                 Log::Write(Log::Level::Verbose, Fmt("Pixel Format: %lu", pixFmt));
                 std::invoke(CreateVideoTextures, graphicsPluginPtr, avFrame->width, avFrame->height, pixFmt);
 
-                if (const auto clientCtx = ctx.clientCtx) {
+                if (const auto clientCtx = m_ctx.clientCtx) {
                     clientCtx->setWaitingNextIDR(false);
-                    if (const auto programPtr = ctx.programPtr) {
+                    if (const auto programPtr = m_ctx.programPtr) {
                         programPtr->SetRenderMode(IOpenXrProgram::RenderMode::VideoStream);
                     }
                 }
@@ -638,8 +641,8 @@ struct FFMPEGDecoderPlugin final : public IDecoderPlugin {
 };
 }
 
-std::shared_ptr<IDecoderPlugin> CreateDecoderPlugin_FFMPEG() {
-    return std::make_shared<FFMPEGDecoderPlugin>();
+std::shared_ptr<IDecoderPlugin> CreateDecoderPlugin_FFMPEG(const IDecoderPlugin::RunCtx& ctx) {
+    return std::make_shared<FFMPEGDecoderPlugin>(ctx);
 }
 
 #endif

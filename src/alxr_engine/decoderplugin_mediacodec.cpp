@@ -1,3 +1,4 @@
+//#define XR_USE_PLATFORM_ANDROID
 #if defined(XR_USE_PLATFORM_ANDROID) && !defined(XR_DISABLE_DECODER_THREAD)
 #include "pch.h"
 #include "common.h"
@@ -30,9 +31,17 @@
 #include "latency_manager.h"
 #include "timing.h"
 
+#ifndef ENABLE_IF_DEBUG
+#ifndef NDEBUG
+    #define ENABLE_IF_DEBUG(x) x
+#else
+	#define ENABLE_IF_DEBUG(x)
+#endif
+#endif
+
 namespace
 {;
-struct FrameIndexMap
+struct FrameIndexMap final
 {
     using TimeStamp = std::uint64_t;
     using FrameIndex = std::uint64_t;
@@ -71,46 +80,18 @@ public:
     }
 };
 
-using EncodedFrame = std::vector<std::uint8_t>;
-struct NALPacket
-{
-    EncodedFrame data;
-    std::uint64_t frameIndex;
-
-    /*constexpr*/ inline NALPacket(const ConstPacketType& p, const std::uint64_t newFrameIdx) noexcept //, const ALVR_CODEC codec)
-        : data{ p.begin(), p.end() },
-        frameIndex(newFrameIdx)
-    {}
-
-    constexpr inline NalType nal_type(const ALXRCodecType codec) const
-    {
-        return get_nal_type({ data.data(), data.size() }, static_cast<ALVR_CODEC>(codec));
-    }
-
-    constexpr inline bool is_config(const ALXRCodecType codec) const
-    {
-        return ::is_config(nal_type(codec), static_cast<ALVR_CODEC>(codec));
-    }
-
-    constexpr inline bool is_idr(const ALXRCodecType codec) const
-    {
-        return ::is_idr(nal_type(codec), static_cast<ALVR_CODEC>(codec));
-    }
-
-    constexpr inline bool empty() const { return data.empty(); }
-
-    /*constexpr*/ inline NALPacket() noexcept = default;
-    constexpr inline NALPacket(const NALPacket&) noexcept = delete;
-    /*constexpr*/ inline NALPacket(NALPacket&&) noexcept = default;
-    constexpr inline NALPacket& operator=(const NALPacket&) noexcept = delete;
-    /*constexpr*/ inline NALPacket& operator=(NALPacket&&) noexcept = default;
-};
-using NALPacketPtr = std::unique_ptr<NALPacket>;
-
-struct XrImageListener
+struct XrImageListener final
 {
     using IOpenXrProgramPtr = std::shared_ptr<IOpenXrProgram>;
-    using AImageReaderPtr = std::unique_ptr<AImageReader, decltype(AImageReader_delete)*>;
+
+    struct AImageReaderDeleter final {
+        void operator()(AImageReader* reader) const {
+			if (reader == nullptr)
+				return;
+			AImageReader_delete(reader);
+		}
+	};
+    using AImageReaderPtr = std::unique_ptr<AImageReader, AImageReaderDeleter>;
 
     FrameIndexMap     frameIndexMap{ 4096 };
     IOpenXrProgramPtr programPtr;
@@ -131,11 +112,10 @@ struct XrImageListener
     inline static AImageReaderPtr MakeImageReader()
     {
         AImageReader* newImgReader = nullptr;
-        if (AImageReader_newWithUsage(1, 1, AIMAGE_FORMAT_PRIVATE, ImageReaderFlags, MaxImageCount, &newImgReader) != AMEDIA_OK ||
-            newImgReader == nullptr) {
-            return { nullptr, [](AImageReader*) {} };
+        if (AImageReader_newWithUsage(1, 1, AIMAGE_FORMAT_PRIVATE, ImageReaderFlags, MaxImageCount, &newImgReader) != AMEDIA_OK) {
+            return {};
         }
-        return { newImgReader, AImageReader_delete };
+        return AImageReaderPtr { newImgReader };
     }
 
     XrImageListener(const IOpenXrProgramPtr& pptr)
@@ -152,6 +132,7 @@ struct XrImageListener
             return;
         }
         if (AImageReader_setImageListener(imageReader.get(), &imageListener) != AMEDIA_OK) {
+            Log::Write(Log::Level::Error, "XrImageListener: Failed to set image listener");
             imageReader.reset();
             programPtr.reset();
         }
@@ -180,20 +161,30 @@ struct XrImageListener
         if (imageReader == nullptr)
             return nullptr;
         ANativeWindow* surface_handle = nullptr;
-        CHECK(AImageReader_getWindow(imageReader.get(), &surface_handle) == AMEDIA_OK);
+        if (AImageReader_getWindow(imageReader.get(), &surface_handle) != AMEDIA_OK) {
+            return nullptr;
+        }
         return surface_handle;
     }
+
+    struct AImageDeleter final {
+        void operator()(AImage* img) const {
+			if (img == nullptr)
+				return;
+			AImage_delete(img);
+		}
+	};
+    using AImagePtr = std::unique_ptr<AImage, AImageDeleter>;
 
     inline void OnImageAvailable(AImageReader* reader)
     {
         std::scoped_lock sl(listenerDestroyMutex);
-        using AImagePtr = std::unique_ptr<AImage, decltype(AImage_delete)*>;
-        auto img = [&]() -> AImagePtr
-        {
+        
+        auto img = [&]() -> AImagePtr {
             AImage* tmp = nullptr;
             if (AImageReader_acquireLatestImage(reader, &tmp) != AMEDIA_OK)
-                return { nullptr, [](AImage*) {} };
-            return { tmp, AImage_delete };
+                return {};
+            return AImagePtr { tmp };
         }();
         if (img == nullptr) {
             Log::Write(Log::Level::Error, "XrImageListener: Failed to acquire latest AImage");
@@ -232,115 +223,56 @@ struct XrImageListener
     }
 };
 
-struct AMediaCodecDeleter {
+struct AMediaCodecDeleter final {
     void operator()(AMediaCodec* codec) const {
         if (codec == nullptr)
             return;
-        CHECK(AMediaCodec_delete(codec) == AMEDIA_OK);
+        ENABLE_IF_DEBUG(const auto deleteResult =) AMediaCodec_delete(codec);
+        assert(deleteResult == AMEDIA_OK);
     }
 };
-using AMediaCodecPtr = std::shared_ptr<AMediaCodec>;
-
-class DecoderOutputThread
-{
-    std::thread m_thread;
-    FrameIndexMap& m_frameIndexMap;
-    std::atomic<bool> m_isRunning{ false };
-public:
-    inline DecoderOutputThread(FrameIndexMap& frameMapRef)
-    : m_frameIndexMap(frameMapRef)
-    {}
-
-    inline DecoderOutputThread(const DecoderOutputThread&) noexcept = delete;
-    inline DecoderOutputThread(DecoderOutputThread&&) noexcept = delete;
-    inline DecoderOutputThread& operator=(const DecoderOutputThread&) noexcept = delete;
-    inline DecoderOutputThread& operator=(DecoderOutputThread&&) noexcept = delete;
-
-    inline ~DecoderOutputThread() {
-        Stop();
-        assert(!m_thread.joinable());
-        Log::Write(Log::Level::Info, "DecoderOutputThread destroyed");
-    }
-
-    bool Start(const AMediaCodecPtr& newCodec)
-    {
-        if (newCodec == nullptr || m_isRunning)
-            return false;
-        std::mutex startMutex;
-        std::condition_variable cv;
-        m_thread = std::thread([this, newCodec, &startMutex, &cv]()
-        {
-            {
-                std::lock_guard lk(startMutex);
-                m_isRunning.store(true);
-            }
-            cv.notify_one();
-            Run(newCodec);
-        });
-        {
-            using namespace std::chrono_literals;
-            std::unique_lock lk(startMutex);
-            if (!cv.wait_for(lk, 1s, [this] { return m_isRunning.load(); })) {
-                Log::Write(Log::Level::Error, "Waiting for decoder thread to start timed out.");
-            }
-        }
-        return m_isRunning;
-    }
-
-    inline void Stop()
-    {
-        if (!m_isRunning)
-            return;
-        Log::Write(Log::Level::Info, "shutting down decoder output thread");
-        m_isRunning = false;
-        if (m_thread.joinable())
-            m_thread.join();
-        Log::Write(Log::Level::Info, "Decoder output thread finished shutdown");
-    }
-
-    inline void Run(const AMediaCodecPtr& codec)
-    {
-        if (codec == nullptr) {
-            Log::Write(Log::Level::Error, "Codec not set for decoder output thread.");
-            return;
-        }
-        assert(codec != nullptr);
-        while (m_isRunning)
-        {
-            AMediaCodecBufferInfo buffInfo{};
-            const auto outputBufferId = AMediaCodec_dequeueOutputBuffer(codec.get(), &buffInfo, 300);
-            if (outputBufferId >= 0 &&
-                outputBufferId != AMEDIACODEC_INFO_OUTPUT_BUFFERS_CHANGED &&
-                outputBufferId != AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED &&
-                outputBufferId != AMEDIACODEC_INFO_TRY_AGAIN_LATER)
-            {
-                const auto ptsUs = static_cast<std::uint64_t>(buffInfo.presentationTimeUs);
-                const auto frameIndex = m_frameIndexMap.get(ptsUs);
-                if (frameIndex != FrameIndexMap::NullIndex) {
-                    LatencyCollector::Instance().decoderOutput(frameIndex);
-                }
-                AMediaCodec_releaseOutputBuffer(codec.get(), outputBufferId, true);
-            }
-            else if (outputBufferId == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED)
-            {
-                AMediaFormat* outputFormat = AMediaCodec_getOutputFormat(codec.get());
-                std::int32_t w = 0, h = 0;
-                AMediaFormat_getInt32(outputFormat, AMEDIAFORMAT_KEY_WIDTH, &w);
-                AMediaFormat_getInt32(outputFormat, AMEDIAFORMAT_KEY_HEIGHT, &h);
-                assert(w != 0 && h != 0);
-                Log::Write(Log::Level::Info, Fmt("OUTPUT_FORMAT_CHANGED, w:%d, h:%d", w, h));
-            }
-        }
-    }
-};
+using AMediaCodecPtr = std::unique_ptr<AMediaCodec, AMediaCodecDeleter>;
 
 struct MediaCodecDecoderPlugin final : IDecoderPlugin
 {
-    using AVPacketQueue = moodycamel::BlockingReaderWriterCircularBuffer<NALPacket>;
     using GraphicsPluginPtr = std::shared_ptr<IGraphicsPlugin>;
 
-    AVPacketQueue           m_packetQueue { 360 };
-    std::atomic<ALVR_CODEC> m_selectedCodecType { ALVR_CODEC_H265 };
+    IDecoderPlugin::RunCtx m_runCtx;
+    
+    using InputBufferQueue  = moodycamel::BlockingReaderWriterCircularBuffer<std::int32_t>;
+    struct OutputBufferId {
+        std::int64_t presentationTimeUs;
+        std::size_t  bufferId;
+    };
+    using OutputBufferQueue = moodycamel::BlockingReaderWriterCircularBuffer<OutputBufferId>;
+    
+    OutputBufferQueue m_outputBufferQueue{ 120 };
+    InputBufferQueue  m_inputBufferQueue { 120 };
+
+    struct CodecCtx final {        
+        XrImageListener imgListener;
+        AMediaCodecPtr  codec{};
+        
+        CodecCtx(const IDecoderPlugin::RunCtx& ctx)
+        : imgListener{ ctx.programPtr } {}
+
+        CodecCtx(const CodecCtx&) noexcept = delete;
+        CodecCtx& operator=(const CodecCtx&) noexcept = delete;
+
+        ~CodecCtx() {
+            if (codec != nullptr) {
+                ENABLE_IF_DEBUG(const auto stopResult = ) AMediaCodec_stop(codec.get());
+                assert(stopResult == AMEDIA_OK);
+            }
+		}
+    };
+    using CodecCtxPtr = std::shared_ptr<CodecCtx>;
+    CodecCtxPtr m_codecCtx{};
+
+    MediaCodecDecoderPlugin(const IDecoderPlugin::RunCtx& ctx)
+    : m_runCtx{ ctx } {
+        assert(m_runCtx.programPtr != nullptr);
+    }
 
     virtual ~MediaCodecDecoderPlugin() override {
         Log::Write(Log::Level::Info, "MediaCodecDecoderPlugin destroyed");
@@ -353,28 +285,97 @@ struct MediaCodecDecoderPlugin final : IDecoderPlugin
 	) override
     {
         using namespace std::literals::chrono_literals;
-        constexpr static const auto QueueWaitTimeout = 500ms;
-        
-        const auto selectedCodec = m_selectedCodecType.load();
+
+        const auto selectedCodec = m_runCtx.config.codecType;
         const auto vpssps = find_vpssps(newPacketData, selectedCodec);
-        if (is_config(vpssps, selectedCodec))
-        {
-            NALPacket configPacket{ vpssps, trackingFrameIndex };
-            const auto frameData = newPacketData.subspan(vpssps.size(), newPacketData.size() - vpssps.size());
-            NALPacket framePacket{ frameData, trackingFrameIndex };
-            m_packetQueue.wait_enqueue_timed(std::move(configPacket), QueueWaitTimeout);
-            m_packetQueue.wait_enqueue_timed(std::move(framePacket), QueueWaitTimeout);
+
+        if (m_codecCtx == nullptr && vpssps.size() > 0) {
+            m_codecCtx = MakeCodecContext(vpssps);
         }
-        else
-            m_packetQueue.wait_enqueue_timed({ newPacketData, trackingFrameIndex }, QueueWaitTimeout);
-		return true;
+        if (m_codecCtx == nullptr)
+			return false;
+
+        std::int32_t inputBufferId = -1;
+        if (!m_inputBufferQueue.wait_dequeue_timed(/*out*/ inputBufferId, 100ms) || inputBufferId < 0) {
+            Log::Write(Log::Level::Warning, "Waiting for input buffer took too long, skipping this frame.");
+            return false;
+        }
+
+        const auto packet_data = newPacketData.subspan(vpssps.size(), newPacketData.size() - vpssps.size());
+        if (is_idr(packet_data, selectedCodec)) {
+            if (const auto clientCtx = m_runCtx.clientCtx) {
+                clientCtx->setWaitingNextIDR(false);
+            }
+        }
+
+        const bool is_config_packet = is_config(packet_data, selectedCodec);
+        if (!is_config_packet) {
+            LatencyCollector::Instance().decoderInput(trackingFrameIndex);
+        }
+
+        const auto bufferId = static_cast<std::size_t>(inputBufferId);
+        std::size_t inBuffSize = 0;
+        const auto inputBuffer = AMediaCodec_getInputBuffer(m_codecCtx->codec.get(), bufferId, &inBuffSize);
+        assert(packet_data.size() <= inBuffSize);
+        const std::size_t size = std::min(inBuffSize, packet_data.size());
+        std::memcpy(inputBuffer, packet_data.data(), size);
+
+        const auto pts = is_config_packet ? 0 : MakePTS();
+        const std::uint32_t flags = is_config_packet ? AMEDIACODEC_BUFFER_FLAG_CODEC_CONFIG : 0;
+        if (!is_config_packet) {
+            m_codecCtx->imgListener.frameIndexMap.set(pts, trackingFrameIndex);
+        }
+
+        const auto result = AMediaCodec_queueInputBuffer(m_codecCtx->codec.get(), bufferId, 0, size, pts, flags);
+        if (result != AMEDIA_OK) {
+            Log::Write(Log::Level::Warning, Fmt("AMediaCodec_queueInputBuffer, error-code %d: ", (int)result));
+            return false;
+        }
+        return true;
 	}
 
-    struct AMediaFormatDeleter {
+    void OnCodecError(AMediaCodec* /*codec*/, media_status_t error, std::int32_t actionCode, const char* details) {
+        Log::Write(Log::Level::Error, Fmt("MediaCodec error: error-code: %d action-code: %d details: %s", error, actionCode, details));
+    }
+
+    void OnCodecFormatChanged(AMediaCodec* /*codec*/, AMediaFormat* outputFormat) {
+        std::int32_t w = 0, h = 0;
+        AMediaFormat_getInt32(outputFormat, AMEDIAFORMAT_KEY_WIDTH, &w);
+        AMediaFormat_getInt32(outputFormat, AMEDIAFORMAT_KEY_HEIGHT, &h);
+        assert(w != 0 && h != 0);
+        Log::Write(Log::Level::Info, Fmt("OUTPUT_FORMAT_CHANGED, w:%d, h:%d", w, h));
+    }
+
+    void OnCodecInputAvailable(AMediaCodec* /*codec*/, std::int32_t index) {
+        assert(index >= 0);
+        using namespace std::literals::chrono_literals;
+        m_inputBufferQueue.wait_enqueue_timed(index, 50ms);
+    }
+
+    void OnCodecOutputAvailable(AMediaCodec* /*codec*/, std::int32_t index, AMediaCodecBufferInfo* bufferInfo) {
+        assert(index >= 0);
+        using namespace std::literals::chrono_literals;
+        const OutputBufferId newOuputBuffer = {
+			.presentationTimeUs = bufferInfo->presentationTimeUs,
+			.bufferId = static_cast<std::size_t>(index)
+		};
+		m_outputBufferQueue.wait_enqueue_timed(newOuputBuffer, 50ms);
+    }
+
+    static std::uint64_t MakePTS() {
+        using namespace std::chrono;
+        using ClockType = XrSteadyClock;
+        static_assert(ClockType::is_steady);
+        using microseconds64 = duration<std::uint64_t, microseconds::period>;
+        return duration_cast<microseconds64>(ClockType::now().time_since_epoch()).count();
+    }
+
+    struct AMediaFormatDeleter final {
         void operator()(AMediaFormat* fmt) const {
             if (fmt == nullptr)
                 return;
-            CHECK(AMediaFormat_delete(fmt) == AMEDIA_OK);
+            ENABLE_IF_DEBUG(const auto deleteResult =) AMediaFormat_delete(fmt);
+            assert(deleteResult == AMEDIA_OK);
         }
     };
     using AMediaFormatPtr = std::unique_ptr<AMediaFormat, AMediaFormatDeleter>;
@@ -382,7 +383,7 @@ struct MediaCodecDecoderPlugin final : IDecoderPlugin
     (
         const char* const mimeType,
         const OptionMap& optionMap,
-        const EncodedFrame& csd0,
+        const IDecoderPlugin::PacketType& csd0,
         const bool realtimePriority = true
     )
     {
@@ -404,7 +405,7 @@ struct MediaCodecDecoderPlugin final : IDecoderPlugin
             AMediaFormat_setInt32(format, key.c_str(), val);
 
         AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_OPERATING_RATE, std::numeric_limits<std::int16_t>::max());
-        AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_PRIORITY, realtimePriority ? 0 : 1);//ctx.config.realtimePriority ? 0 : 1);
+        AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_PRIORITY, realtimePriority ? 0 : 1);
 
 #if defined(__ANDROID_API__) && (__ANDROID_API__ >= 30)
 #pragma message ("Setting android 11(+) LOW_LATENCY key enabled.")
@@ -416,139 +417,134 @@ struct MediaCodecDecoderPlugin final : IDecoderPlugin
         return AMediaFormatPtr { format };
     }
 
-    virtual inline bool Run(const IDecoderPlugin::RunCtx& ctx, IDecoderPlugin::shared_bool& isRunningToken) override
+    AMediaCodecPtr MakeStartedCodec(
+        const IDecoderPlugin::PacketType& csd0,
+        ANativeWindow* const surface_handle
+    ) {
+        if (surface_handle == nullptr)
+            return {};
+
+        Log::Write(Log::Level::Info, "Spawning decoder...");
+        const char* const mimeType = m_runCtx.config.codecType == ALXRCodecType::HEVC_CODEC ? "video/hevc" : "video/avc";
+        AMediaCodecPtr codec{ AMediaCodec_createDecoderByType(mimeType) };
+        if (codec == nullptr)
+        {
+            Log::Write(Log::Level::Error, "AMediaCodec_createDecoderByType failed!");
+            return {};
+        }
+        assert(codec != nullptr);
+
+        char* codecName = nullptr;
+        if (AMediaCodec_getName(codec.get(), &codecName) == AMEDIA_OK) {
+            Log::Write(Log::Level::Info, Fmt("Selected decoder: %s", codecName));
+            AMediaCodec_releaseName(codec.get(), codecName);
+        }
+
+        AMediaFormatPtr format = MakeMediaFormat(mimeType, m_runCtx.optionMap, csd0, m_runCtx.config.realtimePriority);
+        if (format == nullptr) {
+			Log::Write(Log::Level::Error, "Failed to create media format.");
+			return {};
+		}
+
+        using ThisType = MediaCodecDecoderPlugin;
+        AMediaCodecOnAsyncNotifyCallback asyncCallbacks = {
+            .onAsyncInputAvailable = [](AMediaCodec* codec, void* userdata, std::int32_t index) {
+                reinterpret_cast<ThisType*>(userdata)->OnCodecInputAvailable(codec, index);
+            },
+            .onAsyncOutputAvailable = [](AMediaCodec* codec, void* userdata, std::int32_t index, AMediaCodecBufferInfo* bufferInfo) {
+                reinterpret_cast<ThisType*>(userdata)->OnCodecOutputAvailable(codec, index, bufferInfo);
+			},
+            .onAsyncFormatChanged = [](AMediaCodec* codec, void* userdata, AMediaFormat* format) {
+                reinterpret_cast<ThisType*>(userdata)->OnCodecFormatChanged(codec, format);
+            },
+            .onAsyncError = [](AMediaCodec* codec, void* userdata, media_status_t error, std::int32_t actionCode, const char* detail) {
+                reinterpret_cast<ThisType*>(userdata)->OnCodecError(codec, error, actionCode, detail);
+            },
+        };
+        auto status = AMediaCodec_setAsyncNotifyCallback(codec.get(), asyncCallbacks, this);
+        if (status != AMEDIA_OK) {
+            Log::Write(Log::Level::Error, Fmt("AMediaCodec_setAsyncNotifyCallback faild, code: %ld", status));
+            return {};
+        }
+
+        status = AMediaCodec_configure(codec.get(), format.get(), surface_handle, nullptr, 0);
+        if (status != AMEDIA_OK) {
+            Log::Write(Log::Level::Error, Fmt("Failed to configure codec, code: %ld", status));
+            return {};
+        }
+
+        status = AMediaCodec_start(codec.get());
+        if (status != AMEDIA_OK) {
+            Log::Write(Log::Level::Error, Fmt("Failed to start codec, code: %ld", status));
+            return {};
+        }
+        Log::Write(Log::Level::Info, "Finished constructing and starting decoder...");
+        return codec;
+    }
+
+    CodecCtxPtr MakeCodecContext(const IDecoderPlugin::PacketType& csd0) {
+        auto newCodecCtx = std::make_shared<CodecCtx>(m_runCtx);
+        if (!newCodecCtx->imgListener.IsValid())
+            return {};
+        const auto surfaceHandle = newCodecCtx->imgListener.GetWindow();
+        if (surfaceHandle == nullptr) {
+            Log::Write(Log::Level::Error, "Failed to get window surface handle.");
+			return {};
+        }
+        auto codecPtr = MakeStartedCodec(csd0, surfaceHandle);
+        if (codecPtr == nullptr)
+			return {};
+        newCodecCtx->codec = std::move(codecPtr);
+        assert(newCodecCtx->codec != nullptr);
+        if (const auto clientCtx = m_runCtx.clientCtx) {
+            if (const auto programPtr = m_runCtx.programPtr)
+                programPtr->SetRenderMode(IOpenXrProgram::RenderMode::VideoStream);
+        }
+        Log::Write(Log::Level::Info, "Finished Creating CodecContext");
+        return newCodecCtx;
+    }
+
+    CodecCtxPtr waitForCodecCtx(shared_bool& isRunningToken) const {
+        using namespace std::literals::chrono_literals;
+        while (isRunningToken) {
+            if (auto codecCtxPtr = m_codecCtx) {
+                return codecCtxPtr;
+            }
+            std::this_thread::sleep_for(100ms);
+        }
+        return {};
+    }
+
+    virtual inline bool Run(IDecoderPlugin::shared_bool& isRunningToken) override
     {
-        if (!isRunningToken || ctx.programPtr == nullptr) {
+        using namespace std::literals::chrono_literals;
+        if (!isRunningToken || m_runCtx.programPtr == nullptr) {
             Log::Write(Log::Level::Error, "Decoder run parameters not valid.");
             return false;
         }
-        m_selectedCodecType.store(static_cast<ALVR_CODEC>(ctx.config.codecType));
-        
-        XrImageListener imgListener { ctx.programPtr };
-        if (!imgListener.IsValid()) {
-            Log::Write(Log::Level::Error, "Failed to create image reader/listener.");
-            return false;
-        }
 
-        AMediaCodecPtr codec{ nullptr };
-        AMediaFormatPtr format{ nullptr };        
-        DecoderOutputThread outputThread{ imgListener.frameIndexMap };
-        static constexpr const std::int64_t QueueWaitTimeout = 5e+5;
-        while (isRunningToken)
-        {
-            NALPacket packet{};
-            if (!m_packetQueue.wait_dequeue_timed(packet, QueueWaitTimeout))
-                continue;
-
-            if (codec == nullptr && packet.is_config(ctx.config.codecType))
-            {
-                Log::Write(Log::Level::Info, "Spawning decoder...");
-                const char* const mimeType = ctx.config.codecType == ALXRCodecType::HEVC_CODEC ? "video/hevc" : "video/avc";
-                codec.reset(AMediaCodec_createDecoderByType(mimeType), AMediaCodecDeleter());
-                if (codec == nullptr)
-                {
-                    Log::Write(Log::Level::Error, "AMediaCodec_createDecoderByType failed!");
-                    break;
-                }
-                assert(codec != nullptr);
-
-                char* codecName = nullptr;
-                if (AMediaCodec_getName(codec.get(), &codecName) == AMEDIA_OK) {
-                    Log::Write(Log::Level::Info, Fmt("Selected decoder: %s", codecName));
-                    AMediaCodec_releaseName(codec.get(), codecName);
-                }
-
-                format = MakeMediaFormat(mimeType, ctx.optionMap, packet.data, ctx.config.realtimePriority);
-                assert(format != nullptr);
-
-                ANativeWindow* const surface_handle = imgListener.GetWindow();
-                CHECK(surface_handle != nullptr);
-                auto status = AMediaCodec_configure(codec.get(), format.get(), surface_handle, nullptr, 0);
-                if (status != AMEDIA_OK) {
-                    Log::Write(Log::Level::Error, Fmt("Failed to configure codec, code: %ld", status));
-                    codec.reset();
-                    break;
-                }
-
-                status = AMediaCodec_start(codec.get());
-                if (status != AMEDIA_OK) {
-                    Log::Write(Log::Level::Error, Fmt("Failed to start codec, code: %ld", status));
-                    codec.reset();
-                    break;
-                }
-                if (const auto clientCtx = ctx.clientCtx) {
-                    //clientCtx->setWaitingNextIDR(true);
-                    //clientCtx->requestIDR();
-                    if (const auto programPtr = ctx.programPtr) {
-                        programPtr->SetRenderMode(IOpenXrProgram::RenderMode::VideoStream);
-                    }
-                }
-                if (!outputThread.Start(codec)) {
-                    Log::Write(Log::Level::Error, "Decoder output thread failed to start.");
-                    break;
-                }
-                Log::Write(Log::Level::Info, "Finished constructing and starting decoder...");
+        const auto codecCtx = waitForCodecCtx(isRunningToken);
+		
+        while (isRunningToken) {
+            OutputBufferId buffInfo{};
+            if (!m_outputBufferQueue.wait_dequeue_timed(/*out*/ buffInfo, 100ms)) {
+                Log::Write(Log::Level::Warning, "Waiting for decoder output buffer took longer than 100ms, attempting to re-try.");
                 continue;
             }
-
-            if (codec == nullptr)
-                continue;
-            assert(codec != nullptr);
-
-            while (isRunningToken)
-            {
-                if (const auto inputBufferId = AMediaCodec_dequeueInputBuffer(codec.get(), QueueWaitTimeout))
-                {
-                    const auto& packet_data = packet.data;
-                    if (packet.is_idr(ctx.config.codecType)) {
-                        if (const auto clientCtx = ctx.clientCtx) {
-                            clientCtx->setWaitingNextIDR(false);
-                            //Log::Write(Log::Level::Verbose, "Finished waiting for next IDR.");
-                        }
-                    }
-                    const bool is_config_packet = packet.is_config(ctx.config.codecType);
-                    if (!is_config_packet) {
-                        LatencyCollector::Instance().decoderInput(packet.frameIndex);
-                    }
-                    
-                    std::size_t inBuffSize = 0;
-                    const auto inputBuffer = AMediaCodec_getInputBuffer(codec.get(), static_cast<std::size_t>(inputBufferId), &inBuffSize);
-                    assert(packet_data.size() <= inBuffSize);
-                    const std::size_t size = std::min(inBuffSize, packet_data.size());
-                    std::memcpy(inputBuffer, packet_data.data(), size);
-
-                    using namespace std::chrono;
-                    using ClockType = XrSteadyClock;
-                    static_assert(ClockType::is_steady);
-                    using microseconds64 = duration<std::uint64_t, microseconds::period>;
-
-                    const auto pts = is_config_packet ? 0 : duration_cast<microseconds64>(ClockType::now().time_since_epoch()).count();
-                    const std::uint32_t flags = is_config_packet ? AMEDIACODEC_BUFFER_FLAG_CODEC_CONFIG : 0;
-                    if (!is_config_packet) {
-                        imgListener.frameIndexMap.set(pts, packet.frameIndex);
-                    }
-
-                    const auto result = AMediaCodec_queueInputBuffer(codec.get(), inputBufferId, 0, size, pts, flags);
-                    if (result != AMEDIA_OK) {
-                        Log::Write(Log::Level::Warning, Fmt("AMediaCodec_queueInputBuffer, error-code %d: ", (int)result));
-                    }
-                    break;
-                }
-                else Log::Write(Log::Level::Warning, Fmt("Waiting for decoder input buffer timed out after %f seconds, retrying...", QueueWaitTimeout * 1e-6f));
+            const auto ptsUs = static_cast<std::uint64_t>(buffInfo.presentationTimeUs);
+            const auto frameIndex = codecCtx->imgListener.frameIndexMap.get(ptsUs);
+            if (frameIndex != FrameIndexMap::NullIndex) {
+                LatencyCollector::Instance().decoderOutput(frameIndex);
             }
+            AMediaCodec_releaseOutputBuffer(codecCtx->codec.get(), buffInfo.bufferId, true);
         }
-
-        outputThread.Stop();
         Log::Write(Log::Level::Info, "Decoder thread exiting...");
-        if (codec != nullptr) {
-            CHECK(AMediaCodec_stop(codec.get()) == AMEDIA_OK);
-        }
         return true;
     }
 };
 }
 
-std::shared_ptr<IDecoderPlugin> CreateDecoderPlugin_MediaCodec() {
-    return std::make_shared<MediaCodecDecoderPlugin>();
+std::shared_ptr<IDecoderPlugin> CreateDecoderPlugin_MediaCodec(const IDecoderPlugin::RunCtx& ctx) {
+    return std::make_shared<MediaCodecDecoderPlugin>(ctx);
 }
 #endif

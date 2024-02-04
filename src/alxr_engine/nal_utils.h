@@ -4,6 +4,7 @@
 
 #include <span>
 #include "ALVR-common/packet_types.h"
+#include "alxr_ctypes.h"
 
 enum class NalType : std::uint8_t
 {
@@ -36,26 +37,35 @@ constexpr inline NalType get_nal_type(const ConstPacketType& packet, const ALVR_
 {
     if (packet.size() < 5) return NalType::Unknown;
     return NalType(codec == ALVR_CODEC_H264 ?
-        packet[4] & std::uint8_t(0x1F) :
-        (packet[4] >> 1) & std::uint8_t(0x3F));
+        (packet[4] & std::uint8_t(0x1F)) :
+        ((packet[4] >> 1) & std::uint8_t(0x3F)));
 }
 
-constexpr inline bool is_config(const ConstPacketType& packet, const ALVR_CODEC codec)
-{
+constexpr inline NalType get_nal_type(const ConstPacketType& packet, const ALXRCodecType codec) {
+	return get_nal_type(packet, static_cast<ALVR_CODEC>(codec));
+}
+
+constexpr inline bool is_config(const ConstPacketType& packet, const ALVR_CODEC codec) {
     return is_config(get_nal_type(packet, codec), codec);
 }
 
-constexpr inline bool is_idr(const ConstPacketType& packet, const ALVR_CODEC codec)
-{
+constexpr inline bool is_config(const ConstPacketType& packet, const ALXRCodecType codec) {
+	return is_config(packet, static_cast<ALVR_CODEC>(codec));
+}
+
+constexpr inline bool is_idr(const ConstPacketType& packet, const ALVR_CODEC codec) {
     return is_idr(get_nal_type(packet, codec), codec);
+}
+
+constexpr inline bool is_idr(const ConstPacketType& packet, const ALXRCodecType codec) {
+	return is_idr(packet, static_cast<ALVR_CODEC>(codec));
 }
 
 // This frame contains (VPS + )SPS + PPS + IDR on NVENC H.264 (H.265) stream.
  // (VPS + )SPS + PPS has short size (8bytes + 28bytes in some environment), so we can assume SPS + PPS is contained in first fragment.
 inline ConstPacketType find_vpssps(const ConstPacketType& packet, const ALVR_CODEC codec)
 {
-    const auto nalType = get_nal_type(packet, codec);
-    if (!is_config(nalType, codec))
+    if (!is_config(packet, codec))
         return PacketType{};
 
     const std::size_t nalCount = [&]() -> std::size_t
@@ -86,6 +96,10 @@ inline ConstPacketType find_vpssps(const ConstPacketType& packet, const ALVR_COD
             zeroes = 0;
     }
     return PacketType{};
+}
+
+inline ConstPacketType find_vpssps(const ConstPacketType& packet, const ALXRCodecType codec) {
+    return find_vpssps(packet, static_cast<ALVR_CODEC>(codec));
 }
 
 #endif

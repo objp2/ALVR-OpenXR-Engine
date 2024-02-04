@@ -60,8 +60,7 @@ void XrDecoderThread::Start(const XrDecoderThread::StartCtx& ctx)
 	Log::Write(Log::Level::Info, "Starting decoder thread.");
 	m_fecQueue = ctx.decoderConfig.enableFEC ?
 		std::make_shared<FECQueue>() : nullptr;
-	m_decoderPlugin = CreateDecoderPlugin();
-	LatencyManager::Instance().ResetAll();
+
 #ifdef XR_USE_PLATFORM_WIN32
 	auto decoderType = ALXRDecoderType::D311VA;
 #else
@@ -69,6 +68,30 @@ void XrDecoderThread::Start(const XrDecoderThread::StartCtx& ctx)
 #endif
 	if (const auto clientCtx = ctx.clientCtx) {
 		decoderType = clientCtx->decoderType;
+	}
+
+	OptionMap optionMap{};
+#ifdef XR_USE_PLATFORM_ANDROID
+	//// Exynos
+	optionMap.setInt32("vendor.rtc-ext-dec-low-latency.enable", 1);
+	//// qualcom,e.g. Quest 1/2 hw decoder.
+	//optionMap.setInt32("vendor.qti-ext-dec-picture-order.enable", 1);
+	optionMap.setInt32("vendor.qti-ext-dec-low-latency.enable", 1);
+	//// AMD
+	optionMap.setInt32("output-decode-order", 1);
+	optionMap.setInt32("decode-low-latency", 1);
+#endif
+	const IDecoderPlugin::RunCtx runCtx{
+		.optionMap   = std::move(optionMap),
+		.config      = ctx.decoderConfig,
+		.clientCtx   = ctx.clientCtx,
+		.programPtr  = ctx.programPtr,
+		.decoderType = decoderType
+	};
+	m_decoderPlugin = CreateDecoderPlugin(runCtx);
+	LatencyManager::Instance().ResetAll();
+
+	if (const auto clientCtx = ctx.clientCtx) {
 		Log::Write(Log::Level::Verbose, "Sending IDR request");
 		clientCtx->setWaitingNextIDR(true);
 		clientCtx->requestIDR();
@@ -78,27 +101,9 @@ void XrDecoderThread::Start(const XrDecoderThread::StartCtx& ctx)
 	m_isRuningToken = true;
 	m_decoderThread = std::thread
 	{
-		[=, startCtx = ctx]()
+		[this]()
 		{
-			OptionMap optionMap{};
-#ifdef XR_USE_PLATFORM_ANDROID
-			//// Exynos
-			optionMap.setInt32("vendor.rtc-ext-dec-low-latency.enable", 1);
-			//// qualcom,e.g. Quest 1/2 hw decoder.
-			optionMap.setInt32("vendor.qti-ext-dec-low-latency.enable", 1);
-			//// AMD
-			optionMap.setInt32("output-decode-order", 1);
-			optionMap.setInt32("decode-low-latency", 1);
-#endif
-			const IDecoderPlugin::RunCtx runCtx {
-				.optionMap	 = std::move(optionMap),
-				.config		 = startCtx.decoderConfig,
-				.clientCtx	 = startCtx.clientCtx,
-				.programPtr	 = startCtx.programPtr,
-				.decoderType = decoderType
-			};
-			m_decoderPlugin->Run(runCtx, m_isRuningToken);
-
+			m_decoderPlugin->Run(m_isRuningToken);
 			Log::Write(Log::Level::Info, "Decoder thread exiting.");
 		}
 	};

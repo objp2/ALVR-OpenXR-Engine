@@ -76,7 +76,7 @@ struct IDecoderPlugin {
 	) = 0;
 
     using shared_bool = std::atomic<bool>;
-    struct RunCtx {
+    struct RunCtx final {
         using IOpenXrProgramPtr = std::shared_ptr<IOpenXrProgram>;
         using ClientCtxPtr = std::shared_ptr<const ALXRClientCtx>;
 
@@ -86,7 +86,7 @@ struct IDecoderPlugin {
         IOpenXrProgramPtr programPtr;
         ALXRDecoderType   decoderType;
     };
-    virtual bool Run(const RunCtx& /*ctx*/, shared_bool& /*isRunningToken*/) = 0;
+    virtual bool Run(shared_bool& /*isRunningToken*/) = 0;
 
     constexpr inline IDecoderPlugin() noexcept = default;
     inline virtual ~IDecoderPlugin() = default;
@@ -96,6 +96,6 @@ struct IDecoderPlugin {
 	IDecoderPlugin& operator=(IDecoderPlugin&&) noexcept = delete;
 };
 
-std::shared_ptr<IDecoderPlugin> CreateDecoderPlugin();
+std::shared_ptr<IDecoderPlugin> CreateDecoderPlugin(const IDecoderPlugin::RunCtx&);
 
 #endif

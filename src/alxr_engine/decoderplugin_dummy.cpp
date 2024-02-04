@@ -10,12 +10,12 @@ namespace {
             return true;
         }
 
-        virtual bool Run(const RunCtx& /*ctx*/, shared_bool& /*isRunningToken*/) override {
+        virtual bool Run(shared_bool& /*isRunningToken*/) override {
             return true;
         }
     };
 }
 
-std::shared_ptr<IDecoderPlugin> CreateDecoderPlugin_Dummy() {
+std::shared_ptr<IDecoderPlugin> CreateDecoderPlugin_Dummy(const IDecoderPlugin::RunCtx&) {
     return std::make_shared<DummyDecoderPlugin>();
 }
