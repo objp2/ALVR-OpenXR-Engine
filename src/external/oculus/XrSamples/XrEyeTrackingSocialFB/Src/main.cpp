@@ -17,7 +17,6 @@ interaction XR_EXT_eye_gaze_interaction should be used.
 #include <cstdio>
 
 #include "XrApp.h"
-#include <openxr/fb_eye_tracking_social.h>
 #include <openxr/openxr.h>
 #include <openxr/openxr_oculus_helpers.h>
 

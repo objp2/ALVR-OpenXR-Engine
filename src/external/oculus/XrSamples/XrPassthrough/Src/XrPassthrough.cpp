@@ -672,34 +672,15 @@ int main() {
 
     // Check the list of required extensions against what is supported by the runtime.
     {
-        XrResult result;
-        PFN_xrEnumerateInstanceExtensionProperties xrEnumerateInstanceExtensionProperties;
-        OXR(result = xrGetInstanceProcAddr(
-                XR_NULL_HANDLE,
-                "xrEnumerateInstanceExtensionProperties",
-                (PFN_xrVoidFunction*)&xrEnumerateInstanceExtensionProperties));
-        if (result != XR_SUCCESS) {
-            ALOGE("Failed to get xrEnumerateInstanceExtensionProperties function pointer.");
-            exit(1);
-        }
-
-        uint32_t numInputExtensions = 0;
         uint32_t numOutputExtensions = 0;
-        OXR(xrEnumerateInstanceExtensionProperties(
-            NULL, numInputExtensions, &numOutputExtensions, NULL));
+        OXR(xrEnumerateInstanceExtensionProperties(nullptr, 0, &numOutputExtensions, nullptr));
         ALOGV("xrEnumerateInstanceExtensionProperties found %u extension(s).", numOutputExtensions);
 
-        numInputExtensions = numOutputExtensions;
-
-        auto extensionProperties = new XrExtensionProperties[numOutputExtensions];
-
-        for (uint32_t i = 0; i < numOutputExtensions; i++) {
-            extensionProperties[i].type = XR_TYPE_EXTENSION_PROPERTIES;
-            extensionProperties[i].next = NULL;
-        }
+        auto extensionProperties =
+            std::vector<XrExtensionProperties>(numOutputExtensions, {XR_TYPE_EXTENSION_PROPERTIES});
 
         OXR(xrEnumerateInstanceExtensionProperties(
-            NULL, numInputExtensions, &numOutputExtensions, extensionProperties));
+            NULL, numOutputExtensions, &numOutputExtensions, extensionProperties.data()));
         for (uint32_t i = 0; i < numOutputExtensions; i++) {
             ALOGV("Extension #%d = '%s'.", i, extensionProperties[i].extensionName);
         }
@@ -718,8 +699,6 @@ int main() {
                 exit(1);
             }
         }
-
-        delete[] extensionProperties;
     }
 
     // Create the OpenXR instance.
@@ -1527,9 +1506,11 @@ int main() {
         OXR(xrDestroySpace(app.StageSpace));
     }
     OXR(xrDestroySession(app.Session));
+
+    app.egl.DestroyContext();
+
     OXR(xrDestroyInstance(app.Instance));
 
-	app.egl.DestroyContext();
 #if defined(XR_USE_PLATFORM_ANDROID)
     (*androidApp->activity->vm).DetachCurrentThread();
 #endif // defined(XR_USE_PLATFORM_ANDROID)

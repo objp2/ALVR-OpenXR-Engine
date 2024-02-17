@@ -13,6 +13,7 @@ Authors     :   Jonathan E. Wright
 
 #include <vector>
 #include <cctype> // for isdigit, isalpha
+#include <regex>
 
 #include "Misc/Log.h"
 
@@ -129,7 +130,8 @@ std::string exeDirAsUri() {
     if (::UrlCreateFromPathA(path, uri, &uriSize, NULL) != S_OK) {
         return std::string();
     }
-    return std::string(uri);
+    // Windows doesn't recognize '%20' as a space, so replace it with '\x20' which it does.
+    return std::regex_replace(uri, std::regex("%20"), "\x20");
 }
 #endif // defined(OVR_OS_WIN32)
 

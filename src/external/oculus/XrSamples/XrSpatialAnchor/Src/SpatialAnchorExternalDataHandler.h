@@ -2,7 +2,6 @@
 
 #include <vector>
 #include <openxr/openxr.h>
-#include <openxr/fb_spatial_entity_user.h>
 
 class SpatialAnchorExternalDataHandler {
  public:

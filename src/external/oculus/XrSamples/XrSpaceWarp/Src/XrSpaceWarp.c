@@ -2615,35 +2615,20 @@ void android_main(struct android_app* app) {
 
     // Log available layers.
     {
-        XrResult result;
-
-        PFN_xrEnumerateApiLayerProperties xrEnumerateApiLayerProperties;
-        OXR(result = xrGetInstanceProcAddr(
-                XR_NULL_HANDLE,
-                "xrEnumerateApiLayerProperties",
-                (PFN_xrVoidFunction*)&xrEnumerateApiLayerProperties));
-        if (result != XR_SUCCESS) {
-            ALOGE("Failed to get xrEnumerateApiLayerProperties function pointer.");
-            exit(1);
-        }
-
-        uint32_t numInputLayers = 0;
-        uint32_t numOutputLayers = 0;
-        OXR(xrEnumerateApiLayerProperties(numInputLayers, &numOutputLayers, NULL));
-
-        numInputLayers = numOutputLayers;
+        uint32_t numLayers = 0;
+        OXR(xrEnumerateApiLayerProperties(0, &numLayers, NULL));
 
         XrApiLayerProperties* layerProperties =
-            (XrApiLayerProperties*)malloc(numOutputLayers * sizeof(XrApiLayerProperties));
+            (XrApiLayerProperties*)malloc(numLayers * sizeof(XrApiLayerProperties));
 
-        for (uint32_t i = 0; i < numOutputLayers; i++) {
+        for (uint32_t i = 0; i < numLayers; i++) {
             layerProperties[i].type = XR_TYPE_API_LAYER_PROPERTIES;
             layerProperties[i].next = NULL;
         }
 
-        OXR(xrEnumerateApiLayerProperties(numInputLayers, &numOutputLayers, layerProperties));
+        OXR(xrEnumerateApiLayerProperties(numLayers, &numLayers, layerProperties));
 
-        for (uint32_t i = 0; i < numOutputLayers; i++) {
+        for (uint32_t i = 0; i < numLayers; i++) {
             ALOGV("Found layer %s", layerProperties[i].layerName);
         }
 
@@ -2664,42 +2649,28 @@ void android_main(struct android_app* app) {
 
     // Check the list of required extensions against what is supported by the runtime.
     {
-        XrResult result;
-        PFN_xrEnumerateInstanceExtensionProperties xrEnumerateInstanceExtensionProperties;
-        OXR(result = xrGetInstanceProcAddr(
-                XR_NULL_HANDLE,
-                "xrEnumerateInstanceExtensionProperties",
-                (PFN_xrVoidFunction*)&xrEnumerateInstanceExtensionProperties));
-        if (result != XR_SUCCESS) {
-            ALOGE("Failed to get xrEnumerateInstanceExtensionProperties function pointer.");
-            exit(1);
-        }
-
-        uint32_t numInputExtensions = 0;
-        uint32_t numOutputExtensions = 0;
+        uint32_t numExtensions = 0;
         OXR(xrEnumerateInstanceExtensionProperties(
-            NULL, numInputExtensions, &numOutputExtensions, NULL));
-        ALOGV("xrEnumerateInstanceExtensionProperties found %u extension(s).", numOutputExtensions);
-
-        numInputExtensions = numOutputExtensions;
+            NULL, 0, &numExtensions, NULL));
+        ALOGV("xrEnumerateInstanceExtensionProperties found %u extension(s).", numExtensions);
 
         XrExtensionProperties* extensionProperties =
-            (XrExtensionProperties*)malloc(numOutputExtensions * sizeof(XrExtensionProperties));
+            (XrExtensionProperties*)malloc(numExtensions * sizeof(XrExtensionProperties));
 
-        for (uint32_t i = 0; i < numOutputExtensions; i++) {
+        for (uint32_t i = 0; i < numExtensions; i++) {
             extensionProperties[i].type = XR_TYPE_EXTENSION_PROPERTIES;
             extensionProperties[i].next = NULL;
         }
 
         OXR(xrEnumerateInstanceExtensionProperties(
-            NULL, numInputExtensions, &numOutputExtensions, extensionProperties));
-        for (uint32_t i = 0; i < numOutputExtensions; i++) {
+            NULL, numExtensions, &numExtensions, extensionProperties));
+        for (uint32_t i = 0; i < numExtensions; i++) {
             ALOGV("Extension #%d = '%s'.", i, extensionProperties[i].extensionName);
         }
 
         for (uint32_t i = 0; i < numRequiredExtensions; i++) {
             bool found = false;
-            for (uint32_t j = 0; j < numOutputExtensions; j++) {
+            for (uint32_t j = 0; j < numExtensions; j++) {
                 if (!strcmp(requiredExtensionNames[i], extensionProperties[j].extensionName)) {
                     ALOGV("Found required extension %s", requiredExtensionNames[i]);
                     found = true;

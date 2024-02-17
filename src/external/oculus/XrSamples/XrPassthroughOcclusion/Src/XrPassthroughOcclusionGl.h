@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 #include <unordered_map>
 
@@ -128,13 +129,7 @@ class Scene {
 
     GLuint SceneMatrices = 0;
 
-    Program DepthProgram;
-    Geometry DepthPlaneGeometry;
-
-    Program AxesProgram;
-    Geometry Axes;
-
-    Program BoxProgram;
+    Program BoxDepthSpaceOcclusionProgram;
     Geometry Box;
 
    private:
@@ -160,7 +155,10 @@ class AppRenderer {
         GLuint DepthTexture = 0;
         float DepthNearZ = 0.0f;
         float DepthFarZ = 0.0f;
-        OVR::Matrix3f T_DepthCoord_ScreenCoord[kNumEyes];
+
+        // Depth space transform matrices:
+        OVR::Matrix4f DepthViewMatrices[kNumEyes];
+        OVR::Matrix4f DepthProjectionMatrices[kNumEyes];
     };
 
     AppRenderer() = default;
@@ -179,7 +177,6 @@ class AppRenderer {
     Scene scene;
 
    private:
-    void RenderDepth(const FrameIn& frameIn);
     void RenderScene(const FrameIn& frameIn);
 
     bool IsCreated = false;

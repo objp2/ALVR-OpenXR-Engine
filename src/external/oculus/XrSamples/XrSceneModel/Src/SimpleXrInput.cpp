@@ -1,16 +1,31 @@
 // Simple Xr Input
 
+#if defined(ANDROID)
 #include <android/log.h>
+#endif
+
 #include <inttypes.h>
 #include <vector>
 
 #include "SimpleXrInput.h"
 
+#if defined(ANDROID)
 #define DEBUG 1
 #define OVR_LOG_TAG "SimpleXrInput"
 
 #define ALOGE(...) __android_log_print(ANDROID_LOG_ERROR, OVR_LOG_TAG, __VA_ARGS__)
 #define ALOGV(...) __android_log_print(ANDROID_LOG_VERBOSE, OVR_LOG_TAG, __VA_ARGS__)
+#else
+#define DEBUG 1
+#define ALOGE(...)       \
+    printf("ERROR: ");   \
+    printf(__VA_ARGS__); \
+    printf("\n")
+#define ALOGV(...)       \
+    printf("VERBOSE: "); \
+    printf(__VA_ARGS__); \
+    printf("\n")
+#endif
 
 /*
 ================================================================================
@@ -57,6 +72,7 @@ struct SimpleXrInputImpl : public SimpleXrInput {
     XrAction aim = XR_NULL_HANDLE;
     XrAction grip = XR_NULL_HANDLE;
     XrAction trigger = XR_NULL_HANDLE;
+    XrAction squeeze = XR_NULL_HANDLE;
     XrAction thumbClick = XR_NULL_HANDLE;
     XrAction thumbStick = XR_NULL_HANDLE;
 
@@ -110,6 +126,8 @@ struct SimpleXrInputImpl : public SimpleXrInput {
         y = CreateAction(actionSet, XR_ACTION_TYPE_BOOLEAN_INPUT, "y", "Y button");
         trigger = CreateAction(
             actionSet, XR_ACTION_TYPE_BOOLEAN_INPUT, "trigger", nullptr, 2, handSubactionPaths);
+        squeeze = CreateAction(
+            actionSet, XR_ACTION_TYPE_BOOLEAN_INPUT, "squeeze", nullptr, 2, handSubactionPaths);
         thumbClick = CreateAction(
             actionSet, XR_ACTION_TYPE_BOOLEAN_INPUT, "thumb_click", nullptr, 2, handSubactionPaths);
 
@@ -136,6 +154,8 @@ struct SimpleXrInputImpl : public SimpleXrInput {
         bindings.push_back(Suggest(grip, "/user/hand/right/input/grip/pose"));
         bindings.push_back(Suggest(trigger, "/user/hand/left/input/trigger"));
         bindings.push_back(Suggest(trigger, "/user/hand/right/input/trigger"));
+        bindings.push_back(Suggest(squeeze, "/user/hand/left/input/squeeze"));
+        bindings.push_back(Suggest(squeeze, "/user/hand/right/input/squeeze"));
         bindings.push_back(Suggest(thumbClick, "/user/hand/left/input/thumbstick/click"));
         bindings.push_back(Suggest(thumbClick, "/user/hand/right/input/thumbstick/click"));
         bindings.push_back(Suggest(thumbStick, "/user/hand/left/input/thumbstick"));
@@ -252,6 +272,10 @@ struct SimpleXrInputImpl : public SimpleXrInput {
 
     bool IsTriggerPressed(Side side) const override {
         return IsActionPressed(trigger, side);
+    }
+
+    bool IsGripPressed(Side side) const override {
+        return IsActionPressed(squeeze, side);
     }
 
     bool IsThumbClickPressed(Side side) const override {

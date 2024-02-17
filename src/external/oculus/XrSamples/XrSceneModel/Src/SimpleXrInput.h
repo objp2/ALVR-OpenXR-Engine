@@ -1,5 +1,6 @@
 // Simple Xr Input
 
+#if defined(ANDROID)
 #include <jni.h>
 
 #include <EGL/egl.h>
@@ -7,13 +8,21 @@
 #include <GLES3/gl3.h>
 #include <GLES3/gl3ext.h>
 
-#include <OVR_Math.h>
-
 #define XR_USE_GRAPHICS_API_OPENGL_ES 1
 #define XR_USE_PLATFORM_ANDROID 1
+#elif defined(WIN32)
+#include "Render/GlWrapperWin32.h"
+
+#include <unknwn.h>
+#define XR_USE_GRAPHICS_API_OPENGL 1
+#define XR_USE_PLATFORM_WIN32 1
+#endif
+
 #include <openxr/openxr.h>
 #include <openxr/openxr_oculus_helpers.h>
 #include <openxr/openxr_platform.h>
+
+#include "OVR_Math.h"
 
 class SimpleXrInput {
    public:
@@ -53,6 +62,9 @@ class SimpleXrInput {
 
     // Whether the left/right trigger is pressed
     virtual bool IsTriggerPressed(Side side) const = 0;
+
+    // Whether the left/right grip is pressed
+    virtual bool IsGripPressed(Side side) const = 0;
 
     // Whether the left/right thumb click is pressed
     virtual bool IsThumbClickPressed(Side side) const = 0;

@@ -105,40 +105,6 @@ struct OpenGLExtensions_t {
 
 OpenGLExtensions_t glExtensions;
 
-void ComputeNdcToLinearDepthParameters(
-    const float nearZ,
-    const float farZ,
-    float& invDepthFactor,
-    float& depthOffset) {
-    invDepthFactor = 0;
-    depthOffset = 0;
-    if (farZ < nearZ || std::isinf(farZ)) {
-        // Inf far plane:
-        invDepthFactor = -2.0f * nearZ;
-        depthOffset = -1.0f;
-    } else {
-        // Finite far plane:
-        invDepthFactor = -2.0f * farZ * nearZ / (farZ - nearZ);
-        depthOffset = -(farZ + nearZ) / (farZ - nearZ);
-    }
-}
-
-void ComputeLinearToNdcDepthParameters(
-    const float nearZ,
-    const float farZ,
-    float& invDepthFactor,
-    float& depthOffset) {
-    if (farZ < nearZ || std::isinf(farZ)) {
-        // Inf far plane:
-        invDepthFactor = -2.0f * nearZ;
-        depthOffset = 1.0f;
-    } else {
-        // Finite far plane:
-        invDepthFactor = -2.0f * farZ * nearZ / (farZ - nearZ);
-        depthOffset = (farZ + nearZ) / (farZ - nearZ);
-    }
-}
-
 void EglInitExtensions() {
     glExtensions = {};
     const char* allExtensions = (const char*)glGetString(GL_EXTENSIONS);
@@ -471,9 +437,8 @@ struct Uniform {
     enum Index {
         MODEL_MATRIX,
         SCENE_MATRICES,
-        DEPTH_MATRICES,
-        DEPTH_FACTORS1,
-        DEPTH_FACTORS2,
+        DEPTH_VIEW_MATRICES,
+        DEPTH_PROJECTION_MATRICES,
     };
     enum Type {
         UNIFORM,
@@ -488,9 +453,8 @@ struct Uniform {
 static Uniform ProgramUniforms[] = {
     {Uniform::Index::MODEL_MATRIX, Uniform::Type::UNIFORM, "ModelMatrix"},
     {Uniform::Index::SCENE_MATRICES, Uniform::Type::BUFFER, "SceneMatrices"},
-    {Uniform::Index::DEPTH_MATRICES, Uniform::Type::UNIFORM, "ScreenToDepthMatrix"},
-    {Uniform::Index::DEPTH_FACTORS1, Uniform::Type::UNIFORM, "DepthFactors1"},
-    {Uniform::Index::DEPTH_FACTORS2, Uniform::Type::UNIFORM, "DepthFactors2"},
+    {Uniform::Index::DEPTH_VIEW_MATRICES, Uniform::Type::UNIFORM, "DepthViewMatrix"},
+    {Uniform::Index::DEPTH_PROJECTION_MATRICES, Uniform::Type::UNIFORM, "DepthProjectionMatrix"},
 };
 
 static const char* programVersion = "#version 300 es\n";
@@ -625,81 +589,65 @@ int Program::GetUniformBindingOrDie(int uniformId) const {
     return it->second;
 }
 
-static const char VERTEX_SHADER[] = R"(
-    #define NUM_VIEWS 2
-    #define VIEW_ID gl_ViewID_OVR
-    #extension GL_OVR_multiview2 : require
-    layout(num_views=NUM_VIEWS) in;
-    in vec3 vertexPosition;
-    in vec4 vertexColor;
-    uniform mat4 ModelMatrix;
-    uniform SceneMatrices
-    {
-       uniform mat4 ViewMatrix[NUM_VIEWS];
-       uniform mat4 ProjectionMatrix[NUM_VIEWS];
-    } sm;
-    out vec4 fragmentColor;
-    void main() {
-       gl_Position = sm.ProjectionMatrix[VIEW_ID] * ( sm.ViewMatrix[VIEW_ID] * ( ModelMatrix * ( vec4( vertexPosition, 1.0 ) ) ) );
-       fragmentColor = vertexColor;
-    }
-)";
-
-static const char FRAGMENT_SHADER[] = R"(
-    in lowp vec4 fragmentColor;
-    out lowp vec4 outColor;
-    void main() {
-       outColor = fragmentColor;
-    }
-)";
-
-static const char DEPTH_VERTEX_SHADER[] = R"(
+static const char SIX_DOF_VERTEX_SHADER[] = R"(
   #define NUM_VIEWS 2
   #define VIEW_ID gl_ViewID_OVR
   #extension GL_OVR_multiview2 : require
-
   layout(num_views=NUM_VIEWS) in;
-
-  in vec2 vertexPosition;
-  in vec2 vertexUv;
-
-  out vec2 texCoord;
-
+  in vec3 vertexPosition;
+  in vec4 vertexColor;
+  uniform mat4 ModelMatrix;
+  uniform SceneMatrices
+  {
+    uniform mat4 ViewMatrix[NUM_VIEWS];
+    uniform mat4 ProjectionMatrix[NUM_VIEWS];
+  } sm;
+  out vec4 fragmentColor;
+  out vec4 cubeWorldPosition;
   void main() {
-    texCoord = vertexUv;
-  	gl_Position = vec4(vertexPosition, 0.0, 1.0);
+    cubeWorldPosition = ModelMatrix * vec4(vertexPosition, 1.0f);
+  	gl_Position = sm.ProjectionMatrix[VIEW_ID] * sm.ViewMatrix[VIEW_ID] * cubeWorldPosition;
+  	fragmentColor = vertexColor;
   }
 )";
 
-static const char DEPTH_FRAGMENT_SHADER[] = R"(
+static const char SIX_DOF_FRAGMENT_SHADER[] = R"(
   #define NUM_VIEWS 2
   #define VIEW_ID gl_ViewID_OVR
   #extension GL_OVR_multiview2 : require
-  #extension GL_ARB_shading_language_420pack : enable
-
-  uniform highp mat3 ScreenToDepthMatrix[NUM_VIEWS];
-
-  layout(binding = 0) uniform highp sampler2DArray Texture0;
-
-  in highp vec2 texCoord;
-
-  uniform highp vec2 DepthFactors1;
-  uniform highp vec2 DepthFactors2;
-
+  in lowp vec4 fragmentColor;
+  in lowp vec4 cubeWorldPosition;
+  uniform mat4 DepthViewMatrix[NUM_VIEWS];
+  uniform mat4 DepthProjectionMatrix[NUM_VIEWS];
+  layout(binding = 0) uniform highp sampler2DArray EnvironmentDepthTexture;
   out lowp vec4 outColor;
-
   void main() {
-    highp vec3 texCoordH = ScreenToDepthMatrix[VIEW_ID] * vec3(gl_FragCoord.xy, 1);
-    highp vec3 texCoordN = vec3(texCoordH.x / texCoordH.z, texCoordH.y / texCoordH.z, VIEW_ID);
+    // Transform from world space to depth camera space using 6-DOF matrix
+    vec4 cubeDepthCameraPosition = DepthProjectionMatrix[VIEW_ID] * DepthViewMatrix[VIEW_ID] * cubeWorldPosition;
 
-    highp float inputDepthEye = texture(Texture0, texCoordN).r;
-    highp float inputDepthNdc = inputDepthEye * 2.0 - 1.0;
-    highp float metricDepth = (1.0f / (inputDepthNdc + DepthFactors1.y)) * DepthFactors1.x;
-    highp float depthNdc = (1.0f / metricDepth) * DepthFactors2.x + DepthFactors2.y;
-    highp float depthEye = depthNdc * 0.5 + 0.5;
+    // 3D point --> Homogeneous Coordinates --> Normalized Coordinates in [0,1]
+    vec2 cubeDepthCameraPositionHC = cubeDepthCameraPosition.xy / cubeDepthCameraPosition.w;
+    cubeDepthCameraPositionHC = cubeDepthCameraPositionHC * 0.5f + 0.5f;
 
-  	gl_FragDepth = depthEye;
-    outColor = vec4(metricDepth, 0.0, 0.0, 0.7);
+    // Sample from Environment Depth API texture
+    vec3 depthViewCoord = vec3(cubeDepthCameraPositionHC, VIEW_ID);
+    float depthViewEyeZ = texture(EnvironmentDepthTexture, depthViewCoord).r;
+
+    // Get virtual object depth
+    float cubeDepth = cubeDepthCameraPosition.z / cubeDepthCameraPosition.w;
+    cubeDepth = cubeDepth * 0.5f + 0.5f;
+
+    // Test virtual object depth with environment depth.
+    // If the virtual object is further away (occluded) output a transparent color so real scene content from PT layer is displayed.
+    outColor = fragmentColor;
+    if (cubeDepth < depthViewEyeZ) {
+      outColor.a = 1.0f; // fully opaque
+    }
+    else {
+      outColor = vec4(0.0f, 0.0f, 0.0f, 0.0f); // invisible
+    }
+
+    gl_FragDepth = cubeDepth;
   }
 )";
 
@@ -868,21 +816,8 @@ void Scene::Create() {
         GL_STATIC_DRAW));
     GL(glBindBuffer(GL_UNIFORM_BUFFER, 0));
 
-    // DepthProgram
-    if (!DepthProgram.Create(DEPTH_VERTEX_SHADER, DEPTH_FRAGMENT_SHADER)) {
-        ALOGE("Failed to compile depth program");
-    }
-    DepthPlaneGeometry.CreatePlane();
-
-    // Axes
-    if (!AxesProgram.Create(VERTEX_SHADER, FRAGMENT_SHADER)) {
-        ALOGE("Failed to compile axes program");
-    }
-    Axes.CreateAxes();
-
-    // Box
-    if (!BoxProgram.Create(VERTEX_SHADER, FRAGMENT_SHADER)) {
-        ALOGE("Failed to compile box program");
+    if (!BoxDepthSpaceOcclusionProgram.Create(SIX_DOF_VERTEX_SHADER, SIX_DOF_FRAGMENT_SHADER)) {
+        ALOGE("Failed to compile depth space occlusion box program");
     }
     Box.CreateBox();
 
@@ -891,10 +826,7 @@ void Scene::Create() {
 
 void Scene::Destroy() {
     GL(glDeleteBuffers(1, &SceneMatrices));
-    DepthProgram.Destroy();
-    AxesProgram.Destroy();
-    Axes.Destroy();
-    BoxProgram.Destroy();
+    BoxDepthSpaceOcclusionProgram.Destroy();
     Box.Destroy();
     CreatedScene = false;
 }
@@ -951,7 +883,11 @@ void AppRenderer::RenderFrame(const FrameIn& frameIn) {
            GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT));
 
     if (sceneMatrices != nullptr) {
-        std::memcpy((char*)sceneMatrices, &frameIn.View, 4 * sizeof(Matrix4f));
+        std::memcpy(reinterpret_cast<char*>(sceneMatrices), &frameIn.View[0], 2 * sizeof(Matrix4f));
+        std::memcpy(
+            reinterpret_cast<char*>(sceneMatrices) + 2 * sizeof(Matrix4f),
+            &frameIn.Proj[0],
+            2 * sizeof(Matrix4f));
     }
 
     GL(glUnmapBuffer(GL_UNIFORM_BUFFER));
@@ -974,10 +910,6 @@ void AppRenderer::RenderFrame(const FrameIn& frameIn) {
     GL(glClearColor(0.0, 0.0, 0.0, 0.0));
     GL(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
 
-    if (frameIn.HasDepth) {
-        RenderDepth(frameIn);
-    }
-
     RenderScene(frameIn);
 
     framebuffer.Resolve();
@@ -993,113 +925,66 @@ void AppRenderer::RenderScene(const FrameIn& frameIn) {
     GL(glDisable(GL_BLEND));
     GL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
 
-    // Axes
-    GL(glUseProgram(scene.AxesProgram.GetProgramId()));
-    GL(glBindBufferBase(
-        GL_UNIFORM_BUFFER,
-        scene.AxesProgram.GetUniformLocationOrDie(Uniform::Index::SCENE_MATRICES),
-        scene.SceneMatrices));
-    const Matrix4f scale = Matrix4f::Scaling(0.1, 0.1, 0.1);
-    GL(glUniformMatrix4fv(
-        scene.AxesProgram.GetUniformLocationOrDie(Uniform::Index::MODEL_MATRIX),
-        1,
-        GL_TRUE,
-        &scale.M[0][0]));
-    GL(glBindVertexArray(scene.Axes.GetVertexArrayObject()));
-    GL(glDrawElements(GL_LINES, scene.Axes.GetIndexCount(), GL_UNSIGNED_SHORT, nullptr));
-    GL(glBindVertexArray(0));
-    GL(glUseProgram(0));
-
     // Controllers
-    GL(glUseProgram(scene.BoxProgram.GetProgramId()));
+    GL(glUseProgram(scene.BoxDepthSpaceOcclusionProgram.GetProgramId()));
     GL(glBindVertexArray(scene.Box.GetVertexArrayObject()));
+
+    constexpr size_t kDepthMatrixSize = 4 * 4 * sizeof(float);
+    float viewDataBlock[4 * 4 * 2];
+    float projectionDataBlock[4 * 4 * 2];
+    std::memcpy(
+        reinterpret_cast<char*>(viewDataBlock),
+        &frameIn.DepthViewMatrices[0].M[0][0],
+        kDepthMatrixSize);
+    std::memcpy(
+        reinterpret_cast<char*>(viewDataBlock) + kDepthMatrixSize,
+        &frameIn.DepthViewMatrices[1].M[0][0],
+        kDepthMatrixSize);
+    std::memcpy(
+        reinterpret_cast<char*>(projectionDataBlock),
+        &frameIn.DepthProjectionMatrices[0].M[0][0],
+        kDepthMatrixSize);
+    std::memcpy(
+        reinterpret_cast<char*>(projectionDataBlock) + kDepthMatrixSize,
+        &frameIn.DepthProjectionMatrices[1].M[0][0],
+        kDepthMatrixSize);
+
+    GL(glUniformMatrix4fv(
+        scene.BoxDepthSpaceOcclusionProgram.GetUniformLocationOrDie(
+            Uniform::Index::DEPTH_VIEW_MATRICES),
+        2,
+        GL_FALSE,
+        viewDataBlock));
+    GL(glUniformMatrix4fv(
+        scene.BoxDepthSpaceOcclusionProgram.GetUniformLocationOrDie(
+            Uniform::Index::DEPTH_PROJECTION_MATRICES),
+        2,
+        GL_FALSE,
+        projectionDataBlock));
+
+    GL(glBindTexture(GL_TEXTURE_2D_ARRAY, frameIn.DepthTexture));
+    GL(glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+    GL(glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+    GL(glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+    GL(glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+
     GL(glBindBufferBase(
         GL_UNIFORM_BUFFER,
-        scene.BoxProgram.GetUniformBindingOrDie(Uniform::Index::SCENE_MATRICES),
+        scene.BoxDepthSpaceOcclusionProgram.GetUniformBindingOrDie(Uniform::Index::SCENE_MATRICES),
         scene.SceneMatrices));
     for (const auto& trackedController : scene.TrackedControllers) {
         const Matrix4f pose(trackedController.Pose);
         const Matrix4f offset = Matrix4f::Translation(0, 0, -0.25);
+        const Matrix4f scale = Matrix4f::Scaling(0.1, 0.1, 0.1);
         const Matrix4f model = pose * offset * scale;
         glUniformMatrix4fv(
-            scene.BoxProgram.GetUniformLocationOrDie(Uniform::Index::MODEL_MATRIX),
+            scene.BoxDepthSpaceOcclusionProgram.GetUniformLocationOrDie(
+                Uniform::Index::MODEL_MATRIX),
             1,
             GL_TRUE,
             &model.M[0][0]);
         GL(glDrawElements(GL_TRIANGLES, scene.Box.GetIndexCount(), GL_UNSIGNED_SHORT, NULL));
     }
-    GL(glBindVertexArray(0));
-    GL(glUseProgram(0));
-}
-
-void AppRenderer::RenderDepth(const FrameIn& frameIn) {
-    GL(glUseProgram(scene.DepthProgram.GetProgramId()));
-    // OVR is stored in row-major order while GLES expectes col-major, so transpose the
-    // matrices.
-    const OVR::Matrix3f colMajor_T_DepthCoord_ScreenCoord0 =
-        frameIn.T_DepthCoord_ScreenCoord[0].Transposed();
-    const OVR::Matrix3f colMajor_T_DepthCoord_ScreenCoord1 =
-        frameIn.T_DepthCoord_ScreenCoord[1].Transposed();
-
-    // Size of a the `T_DepthCoord_ScreenCoord` matrix used when rendering depth.
-    constexpr size_t kDepthTextureMatrixSize = 3 * 3 * sizeof(float);
-    float dataBlock[3 * 3 * 2];
-    std::memcpy(
-        reinterpret_cast<char*>(dataBlock),
-        &colMajor_T_DepthCoord_ScreenCoord0.M[0][0],
-        kDepthTextureMatrixSize);
-    std::memcpy(
-        reinterpret_cast<char*>(dataBlock) + kDepthTextureMatrixSize,
-        &colMajor_T_DepthCoord_ScreenCoord1.M[0][0],
-        kDepthTextureMatrixSize);
-
-    GL(glUniformMatrix3fv(
-        scene.DepthProgram.GetUniformLocationOrDie(Uniform::Index::DEPTH_MATRICES),
-        2,
-        GL_FALSE,
-        dataBlock));
-    GL(glDisable(GL_SCISSOR_TEST));
-    GL(glDisable(GL_BLEND));
-
-    // Create a mapping from the linear depth in the depth map texture and the OpenGL depth
-    // buffer that we are rendering to. Depth texture -> Metric
-    float depthFactor1_InvD = 0;
-    float depthFactor1_Offset = 0;
-    ComputeNdcToLinearDepthParameters(
-        frameIn.DepthNearZ, frameIn.DepthFarZ, depthFactor1_InvD, depthFactor1_Offset);
-
-    GLfloat depthFactors1[2] = {depthFactor1_InvD, depthFactor1_Offset};
-    GL(glUniform2fv(
-        scene.DepthProgram.GetUniformLocationOrDie(Uniform::Index::DEPTH_FACTORS1),
-        1,
-        depthFactors1));
-
-    // Metric -> Screen depth
-    float depthFactor2_InvD = 0;
-    float depthFactor2_Offset = 0;
-    ComputeLinearToNdcDepthParameters(
-        frameIn.ScreenNearZ, frameIn.ScreenFarZ, depthFactor2_InvD, depthFactor2_Offset);
-
-    GLfloat depthFactors2[2] = {depthFactor2_InvD, depthFactor2_Offset};
-    GL(glUniform2fv(
-        scene.DepthProgram.GetUniformLocationOrDie(Uniform::Index::DEPTH_FACTORS2),
-        1,
-        depthFactors2));
-
-    // GL(glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE));
-    GL(glEnable(GL_DEPTH_TEST));
-    GL(glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE));
-    GL(glDepthMask(GL_TRUE));
-
-    GL(glBindTexture(GL_TEXTURE_2D_ARRAY, frameIn.DepthTexture));
-    GL(glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT));
-    GL(glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT));
-    GL(glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
-    GL(glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
-
-    GL(glBindVertexArray(scene.DepthPlaneGeometry.GetVertexArrayObject()));
-    GL(glDrawElements(
-        GL_TRIANGLES, scene.DepthPlaneGeometry.GetIndexCount(), GL_UNSIGNED_SHORT, nullptr));
 
     GL(glBindVertexArray(0));
     GL(glBindTexture(GL_TEXTURE_2D_ARRAY, 0));

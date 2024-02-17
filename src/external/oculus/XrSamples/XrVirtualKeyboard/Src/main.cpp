@@ -134,7 +134,7 @@ class XrVirtualKeyboardApp : public OVRFW::XrApp {
             if (success) {
                 XrVirtualKeyboardSpaceCreateInfoMETA spaceCreateInfo{
                     XR_TYPE_VIRTUAL_KEYBOARD_SPACE_CREATE_INFO_META};
-                spaceCreateInfo.space = GetLocalSpace();
+                spaceCreateInfo.space = GetCurrentSpace();
                 spaceCreateInfo.poseInSpace = ToXrPosef(OVR::Posef::Identity());
                 success = virtualKeyboard_->CreateVirtualKeyboardSpace(&spaceCreateInfo);
                 if (!success) {
@@ -433,7 +433,7 @@ class XrVirtualKeyboardApp : public OVRFW::XrApp {
     void SetKeyboardLocation(XrVirtualKeyboardLocationTypeMETA locationType) {
         // Update keyboard location based on the location type
         XrVirtualKeyboardLocationInfoMETA locationInfo{XR_TYPE_VIRTUAL_KEYBOARD_LOCATION_INFO_META};
-        locationInfo.space = GetLocalSpace();
+        locationInfo.space = GetCurrentSpace();
         locationInfo.locationType = locationType;
         if (!virtualKeyboard_->SuggestVirtualKeyboardLocation(&locationInfo)) {
             eventLog_->SetText("Failed to update keyboard location & scale.");
@@ -446,7 +446,7 @@ class XrVirtualKeyboardApp : public OVRFW::XrApp {
         // Sync local location/scale
         VirtualKeyboardLocation location;
         if (!virtualKeyboard_->GetVirtualKeyboardLocation(
-                GetLocalSpace(), ToXrTime(OVRFW::GetTimeInSeconds()), &location)) {
+                GetCurrentSpace(), ToXrTime(OVRFW::GetTimeInSeconds()), &location)) {
             eventLog_->SetText("Failed to sync keyboard location & scale.");
             return;
         }
@@ -519,6 +519,13 @@ class XrVirtualKeyboardApp : public OVRFW::XrApp {
         hideKeyboardButton_ = ui_.AddButton(
             "Hide Keyboard", {-0.3f, 0.8f, -1.5f}, {300.0f, 50.0f}, [this]() { HideKeyboard(); });
 
+        // Space buttons
+        localSpaceButton_ = ui_.AddButton(
+            "Local Space", {-0.3f, 0.7f, -1.5f}, {300.0f, 50.0f}, [this]() { SetSpace(GetLocalSpace()); });
+        stageSpaceButton_ = ui_.AddButton(
+            "Stage Space", {0.3f, 0.7f, -1.5f}, {300.0f, 50.0f}, [this]() { SetSpace(GetStageSpace()); });
+        SetSpace(GetCurrentSpace());
+
         // Keyboard location controls
         enableMoveKeyboardButton_ =
             ui_.AddButton("Move", {0.1f, 0.9f, -1.5f}, {100.0f, 50.0f}, [this]() {
@@ -546,6 +553,17 @@ class XrVirtualKeyboardApp : public OVRFW::XrApp {
             });
 
         ui_.SetUnhandledClickHandler([this]() { isMovingKeyboard_ = false; });
+    }
+
+    void SetSpace(XrSpace space) {
+        CurrentSpace = space;
+        if (CurrentSpace == GetLocalSpace()) {
+            DisableButton(localSpaceButton_);
+            EnableButton(stageSpaceButton_);
+        } else {
+            EnableButton(localSpaceButton_);
+            DisableButton(stageSpaceButton_);
+        }
     }
 
     void EnableButton(OVRFW::VRMenuObject* button) {
@@ -620,7 +638,7 @@ class XrVirtualKeyboardApp : public OVRFW::XrApp {
 
         XrVirtualKeyboardLocationInfoMETA locationInfo{XR_TYPE_VIRTUAL_KEYBOARD_LOCATION_INFO_META};
         locationInfo.locationType = XR_VIRTUAL_KEYBOARD_LOCATION_TYPE_CUSTOM_META;
-        locationInfo.space = GetLocalSpace();
+        locationInfo.space = GetCurrentSpace();
         locationInfo.poseInSpace = ToXrPosef(targetPose);
         locationInfo.scale = newScale;
 
@@ -721,9 +739,9 @@ class XrVirtualKeyboardApp : public OVRFW::XrApp {
         // Send both ray and direct input and let the runtime decide which best to use
         const auto result =
             virtualKeyboard_->SendVirtualKeyboardInput(
-                GetLocalSpace(), rayInputSource, xrAimPose, didPinch, &interactorRootPose) &&
+                GetCurrentSpace(), rayInputSource, xrAimPose, didPinch, &interactorRootPose) &&
             virtualKeyboard_->SendVirtualKeyboardInput(
-                GetLocalSpace(), directInputSource, xrTouchPose, didPinch, &interactorRootPose);
+                GetCurrentSpace(), directInputSource, xrTouchPose, didPinch, &interactorRootPose);
 
         // Handle poke limiting
         if (result) {
@@ -753,9 +771,9 @@ class XrVirtualKeyboardApp : public OVRFW::XrApp {
         // Send both ray and direct input and let the runtime decide which best to use
         auto result =
             virtualKeyboard_->SendVirtualKeyboardInput(
-                GetLocalSpace(), rayInputSource, xrAimPose, didPinch, &interactorRootPose) &&
+                GetCurrentSpace(), rayInputSource, xrAimPose, didPinch, &interactorRootPose) &&
             virtualKeyboard_->SendVirtualKeyboardInput(
-                GetLocalSpace(), directInputSource, xrTouchPose, didPinch, &interactorRootPose);
+                GetCurrentSpace(), directInputSource, xrTouchPose, didPinch, &interactorRootPose);
 
         // Handle poke limiting
         if (result) {
@@ -818,7 +836,7 @@ class XrVirtualKeyboardApp : public OVRFW::XrApp {
         // Query and update location before render
         VirtualKeyboardLocation location;
         if (virtualKeyboard_->GetVirtualKeyboardLocation(
-                GetLocalSpace(), ToXrTime(in.PredictedDisplayTime), &location)) {
+                GetCurrentSpace(), ToXrTime(in.PredictedDisplayTime), &location)) {
             currentPose_ = FromXrPosef(location.pose);
             currentScale_ = location.scale;
 
@@ -927,6 +945,9 @@ class XrVirtualKeyboardApp : public OVRFW::XrApp {
     OVRFW::VRMenuObject* showKeyboardButton_ = nullptr;
     OVRFW::VRMenuObject* hideKeyboardButton_ = nullptr;
     bool isShowingKeyboard_ = false;
+
+    OVRFW::VRMenuObject* localSpaceButton_ = nullptr;
+    OVRFW::VRMenuObject* stageSpaceButton_ = nullptr;
 
     OVRFW::VRMenuObject* enableMoveKeyboardButton_ = nullptr;
     OVRFW::VRMenuObject* showNearKeyboardButton_ = nullptr;

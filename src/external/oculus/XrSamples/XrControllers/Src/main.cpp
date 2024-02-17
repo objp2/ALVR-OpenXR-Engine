@@ -22,17 +22,6 @@ Language    :   C++
 
 #include "XrApp.h"
 
-// Add new profile
-#include <openxr/fb_touch_controller_pro.h>
-#include <openxr/meta_touch_controller_plus.h>
-
-// Add envolope haptics
-#include <openxr/fb_haptic_amplitude_envelope.h>
-#include <openxr/fb_haptic_pcm.h>
-
-// Support proximity on touch controller
-#include <openxr/fb_touch_controller_proximity.h>
-
 /// Haptic effects
 const float kScrollBuffer[]{1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1};
 float reducingIntensity[]{1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1};

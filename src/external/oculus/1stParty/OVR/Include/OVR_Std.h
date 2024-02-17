@@ -28,12 +28,10 @@
 #ifndef OVR_Std_h
 #define OVR_Std_h
 
-#include "OVR_Types.h"
 #include <stdarg.h> // for va_list args
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <ctype.h>
 
 #if !defined(OVR_OS_WINCE) && defined(OVR_CC_MSVC) && (OVR_CC_MSVC >= 1400)
 #define OVR_MSVC_SAFESTRING
@@ -42,7 +40,14 @@
 
 // Wide-char funcs
 #include <wchar.h>
+// Only include wctype.h if preprocessor configuration indicates to rely upon
+// standard library implementation for wide character type support.
+#ifdef OVR_NO_WCTYPE
 #include <wctype.h>
+#endif
+
+#include "OVR_Asserts.h"
+#include "OVR_Types.h"
 
 namespace OVR {
 

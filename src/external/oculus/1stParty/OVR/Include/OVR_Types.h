@@ -157,8 +157,6 @@
 // ***** Standard Includes
 //
 #include <stddef.h>
-#include <limits.h>
-#include <float.h>
 
 // MSVC Based Memory Leak checking - for now
 #if defined(OVR_CC_MSVC) && defined(OVR_BUILD_DEBUG)
@@ -243,15 +241,20 @@ typedef unsigned long pid_t;
 // MERGE_MOBILE_SDK
 #if defined(OVR_OS_ANDROID)
 #include <jni.h>
-#elif defined(__cplusplus)
+#elif !defined(OVR_NO_JNI)
+#if defined(__cplusplus)
+class _jobject {};
+class _jclass : public _jobject {};
+class _jstring : public _jobject {};
+
 typedef struct _JNIEnv JNIEnv;
 typedef struct _JavaVM JavaVM;
 typedef struct _jmethodID* jmethodID;
 typedef struct _jfieldID* jfieldID;
-typedef class _jobject* jobject;
-typedef class _jobject* jclass;
-typedef class _jobject* jstring;
-typedef long long jlong;
+typedef _jobject* jobject;
+typedef _jclass* jclass;
+typedef _jstring* jstring;
+typedef int64_t jlong;
 typedef OVR::SInt32 jint;
 typedef OVR::UByte jboolean;
 #else
@@ -262,9 +265,10 @@ typedef const struct _jfieldID* jfieldID;
 typedef void* jobject;
 typedef jobject jclass;
 typedef jobject jstring;
-typedef long long jlong;
-typedef int jint;
+typedef int64_t jlong;
+typedef int32_t jint;
 typedef unsigned char jboolean;
+#endif
 #endif
 // MERGE_MOBILE_SDK
 
@@ -385,6 +389,8 @@ typedef unsigned char jboolean;
 #define OVR_FORCE_INLINE inline
 #endif // OVR_CC_MSVC
 
+// Include the assert header here to maintain compatibility with the PC version
+// of this header which inlined these definitions here.
 #include "OVR_Asserts.h"
 
 // ------------------------------------------------------------------------

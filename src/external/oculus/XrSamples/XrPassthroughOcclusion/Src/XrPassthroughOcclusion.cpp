@@ -733,34 +733,15 @@ int main() {
 
     // Check the list of required extensions against what is supported by the runtime.
     {
-        XrResult result;
-        PFN_xrEnumerateInstanceExtensionProperties xrEnumerateInstanceExtensionProperties;
-        OXR(result = xrGetInstanceProcAddr(
-                XR_NULL_HANDLE,
-                "xrEnumerateInstanceExtensionProperties",
-                (PFN_xrVoidFunction*)&xrEnumerateInstanceExtensionProperties));
-        if (result != XR_SUCCESS) {
-            ALOGE("Failed to get xrEnumerateInstanceExtensionProperties function pointer.");
-            exit(1);
-        }
-
-        uint32_t numInputExtensions = 0;
         uint32_t numOutputExtensions = 0;
-        OXR(xrEnumerateInstanceExtensionProperties(
-            NULL, numInputExtensions, &numOutputExtensions, NULL));
+        OXR(xrEnumerateInstanceExtensionProperties(nullptr, 0, &numOutputExtensions, nullptr));
         ALOGV("xrEnumerateInstanceExtensionProperties found %u extension(s).", numOutputExtensions);
 
-        numInputExtensions = numOutputExtensions;
-
-        auto extensionProperties = new XrExtensionProperties[numOutputExtensions];
-
-        for (uint32_t i = 0; i < numOutputExtensions; i++) {
-            extensionProperties[i].type = XR_TYPE_EXTENSION_PROPERTIES;
-            extensionProperties[i].next = NULL;
-        }
+        auto extensionProperties =
+            std::vector<XrExtensionProperties>(numOutputExtensions, {XR_TYPE_EXTENSION_PROPERTIES});
 
         OXR(xrEnumerateInstanceExtensionProperties(
-            NULL, numInputExtensions, &numOutputExtensions, extensionProperties));
+            NULL, numOutputExtensions, &numOutputExtensions, extensionProperties.data()));
         for (uint32_t i = 0; i < numOutputExtensions; i++) {
             ALOGV("Extension #%d = '%s'.", i, extensionProperties[i].extensionName);
         }
@@ -779,8 +760,6 @@ int main() {
                 exit(1);
             }
         }
-
-        delete[] extensionProperties;
     }
 
     // Create the OpenXR instance.
@@ -1306,12 +1285,12 @@ int main() {
             XrMatrix4x4f_CreateFromRigidTransform(&viewMat, &xfEyeFromLocal);
 
             const XrFovf fov = projections[eye].fov;
-            XrMatrix4x4f projMat;
+            XrMatrix4x4f projectionMat;
             XrMatrix4x4f_CreateProjectionFov(
-                &projMat, GRAPHICS_OPENGL_ES, fov, kProjectionNearZ, kProjectionFarZ);
+                &projectionMat, GRAPHICS_OPENGL_ES, fov, kProjectionNearZ, kProjectionFarZ);
 
             frameIn.View[eye] = OvrFromXr(viewMat);
-            frameIn.Proj[eye] = OvrFromXr(projMat);
+            frameIn.Proj[eye] = OvrFromXr(projectionMat);
         }
 
         XrSwapchainImageWaitInfo waitInfo = {XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
@@ -1356,13 +1335,19 @@ int main() {
                 // TODO(T163815090): Use the actual returned pose once verified correct.
                 // const XrPosef xfLocalFromDepthEye = environmentDepthImage.views[eye].pose;
                 const XrPosef xfLocalFromDepthEye = xfLocalFromEye[eye];
-                frameIn.T_DepthCoord_ScreenCoord[eye] = MakeDestFromSourceMapping(
-                    /*destSize=*/OVR::Vector2f(1.0f, 1.0f),
-                    /*destFov=*/environmentDepthImage.views[eye].fov,
-                    /*xfLocalFromDestCamera=*/xfLocalFromDepthEye,
-                    /*sourceSize=*/OVR::Vector2f(width, height),
-                    /*sourceFov=*/projections[eye].fov,
-                    /*xfLocalFromSourceCamera=*/xfLocalFromEye[eye]);
+                const XrPosef xfDepthEyeFromLocal = XrPosef_Inverse(xfLocalFromDepthEye);
+                XrMatrix4x4f viewMat;
+                XrMatrix4x4f_CreateFromRigidTransform(&viewMat, &xfDepthEyeFromLocal);
+                XrMatrix4x4f projectionMat;
+                XrMatrix4x4f_CreateProjectionFov(
+                    &projectionMat,
+                    GRAPHICS_OPENGL_ES,
+                    environmentDepthImage.views[eye].fov,
+                    environmentDepthImage.nearZ,
+                    std::isfinite(environmentDepthImage.farZ) ? environmentDepthImage.farZ : 0);
+
+                frameIn.DepthViewMatrices[eye] = OvrFromXr(viewMat);
+                frameIn.DepthProjectionMatrices[eye] = OvrFromXr(projectionMat);
             }
         } else {
             ALOGE("No depth image received. Result = %d", acquireResult);
@@ -1449,9 +1434,10 @@ int main() {
     OXR(xrDestroySpace(app.HeadSpace));
     OXR(xrDestroySpace(app.LocalSpace));
     OXR(xrDestroySession(app.Session));
-    OXR(xrDestroyInstance(app.Instance));
 
     app.egl.DestroyContext();
+
+    OXR(xrDestroyInstance(app.Instance));
 
 #if defined(XR_USE_PLATFORM_ANDROID)
     (*androidApp->activity->vm).DetachCurrentThread();

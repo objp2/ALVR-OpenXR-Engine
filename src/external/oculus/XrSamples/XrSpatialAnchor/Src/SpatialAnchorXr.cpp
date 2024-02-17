@@ -41,11 +41,6 @@ Copyright : Copyright (c) Meta Platforms, Inc. and its affiliates. All rights re
 #include "SpatialAnchorFileHandler.h"
 
 #include <openxr/fb_spatial_entity.h>
-#include <openxr/fb_spatial_entity_query.h>
-#include <openxr/fb_spatial_entity_storage.h>
-#include <openxr/fb_spatial_entity_storage_batch.h>
-#include <openxr/fb_spatial_entity_user.h>
-#include <openxr/fb_spatial_entity_sharing.h>
 
 #if defined(_WIN32)
 // Favor the high performance NVIDIA or AMD GPUs
@@ -1365,34 +1360,16 @@ int main() {
 
     // Check the list of required extensions against what is supported by the runtime.
     {
-        XrResult result;
-        PFN_xrEnumerateInstanceExtensionProperties xrEnumerateInstanceExtensionProperties;
-        OXR(result = xrGetInstanceProcAddr(
-                XR_NULL_HANDLE,
-                "xrEnumerateInstanceExtensionProperties",
-                (PFN_xrVoidFunction*)&xrEnumerateInstanceExtensionProperties));
-        if (result != XR_SUCCESS) {
-            ALOGE("Failed to get xrEnumerateInstanceExtensionProperties function pointer.");
-            exit(1);
-        }
-
-        uint32_t numInputExtensions = 0;
         uint32_t numOutputExtensions = 0;
         OXR(xrEnumerateInstanceExtensionProperties(
-            NULL, numInputExtensions, &numOutputExtensions, NULL));
+            nullptr, 0, &numOutputExtensions, nullptr));
         ALOGV("xrEnumerateInstanceExtensionProperties found %u extension(s).", numOutputExtensions);
 
-        numInputExtensions = numOutputExtensions;
-
-        auto extensionProperties = new XrExtensionProperties[numOutputExtensions];
-
-        for (uint32_t i = 0; i < numOutputExtensions; i++) {
-            extensionProperties[i].type = XR_TYPE_EXTENSION_PROPERTIES;
-            extensionProperties[i].next = NULL;
-        }
+        auto extensionProperties =
+            std::vector<XrExtensionProperties>(numOutputExtensions, {XR_TYPE_EXTENSION_PROPERTIES});
 
         OXR(xrEnumerateInstanceExtensionProperties(
-            NULL, numInputExtensions, &numOutputExtensions, extensionProperties));
+            nullptr, numOutputExtensions, &numOutputExtensions, extensionProperties.data()));
         for (uint32_t i = 0; i < numOutputExtensions; i++) {
             ALOGV("Extension #%d = '%s'.", i, extensionProperties[i].extensionName);
         }
@@ -1400,7 +1377,7 @@ int main() {
         for (uint32_t i = 0; i < numRequiredExtensions; i++) {
             if (!isExtensionEnumerated(
                     requiredExtensionNames[i],
-                    extensionProperties,
+                    extensionProperties.data(),
                     numOutputExtensions)) {
                 ALOGE("Failed to find required extension %s", requiredExtensionNames[i]);
                 exit(1);
@@ -1413,7 +1390,7 @@ int main() {
         for (uint32_t i = 0; i < numLocalMultiplayerExtensions; i++) {
             if (!isExtensionEnumerated(
                     localMultiplayerExtensionNames[i],
-                    extensionProperties,
+                    extensionProperties.data(),
                     numOutputExtensions)) {
                 ALOGW(
                     "Failed to find local multiplayer extension %s - feature is not supported on this device",
@@ -1424,8 +1401,6 @@ int main() {
                 requestedExtensionNames.push_back(localMultiplayerExtensionNames[i]);
             }
         }
-
-        delete[] extensionProperties;
     }
 
     // Create the OpenXR instance.
@@ -1698,7 +1673,7 @@ int main() {
         ALOGV("Created stage space");
     }
 
-    auto projections = new XrView[NUM_EYES];
+    XrView projections[NUM_EYES];
     for (int eye = 0; eye < NUM_EYES; eye++) {
         projections[eye] = XrView{XR_TYPE_VIEW};
     }
@@ -2193,10 +2168,7 @@ int main() {
 
     app.AppRenderer.Destroy();
 
-    delete[] projections;
-
-    app.Egl.DestroyContext();
-
+    OXR(xrDestroySwapchain(app.ColorSwapChain));
     OXR(xrDestroySpace(app.HeadSpace));
     OXR(xrDestroySpace(app.LocalSpace));
     // StageSpace is optional.
@@ -2204,6 +2176,9 @@ int main() {
         OXR(xrDestroySpace(app.StageSpace));
     }
     OXR(xrDestroySession(app.Session));
+
+    app.Egl.DestroyContext();
+
     OXR(xrDestroyInstance(instance));
 
 #if defined(XR_USE_PLATFORM_ANDROID)

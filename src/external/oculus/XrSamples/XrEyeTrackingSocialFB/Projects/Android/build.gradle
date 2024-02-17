@@ -1,32 +1,42 @@
-// (c) Meta Platforms, Inc. and affiliates.
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath "com.android.tools.build:gradle:7.0.3"
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
 
 apply plugin: 'com.android.application'
-apply from: "${rootProject.projectDir}/VrApp.gradle"
 
 android {
-  // This is the name of the generated apk file, which will have
-  // -debug.apk or -release.apk appended to it.
-  // The filename doesn't effect the Android installation process.
-  // Use only letters to remain compatible with the package name.
-  project.archivesBaseName = "xreyetrackingsocialfb"
+  compileSdk 30
 
   defaultConfig {
-    // Gradle replaces the manifest package with this value, which must
-    // be unique on a system.  If you don't change it, a new app
-    // will replace an older one.
-    applicationId "com.oculus.sdk." + project.archivesBaseName
-    minSdkVersion 24
-    targetSdkVersion 25
-    compileSdkVersion 26
+    applicationId "com.oculus.sdk.xreyetrackingsocialfb"
+    minSdk 26
+    targetSdk 30
+    versionCode 1
+    versionName "1.0"
 
     // override app plugin abiFilters for 64-bit support
     externalNativeBuild {
-        ndk {
-                abiFilters 'arm64-v8a'
-        }
-        ndkBuild {
-                abiFilters 'arm64-v8a'
-        }
+      ndk {
+        abiFilters 'arm64-v8a'
+      }
+      ndkBuild {
+        abiFilters 'arm64-v8a'
+      }
+      cmake {
+         targets "xreyetrackingsocialfb"
+      }
     }
   }
 
@@ -34,14 +44,24 @@ android {
     main {
       manifest.srcFile 'AndroidManifest.xml'
       java.srcDirs = ['../../java']
-      jniLibs.srcDir 'libs'
-
       assets.srcDirs = ['../../assets']
       res.srcDirs = ['../../res']
     }
   }
 
-  lintOptions {
-    disable 'ExpiredTargetSdkVersion'
+  buildTypes {
+    debug {
+      debuggable true
+    }
+
+    release {
+      debuggable false
+    }
+  }
+
+  externalNativeBuild {
+    cmake {
+      path file('../../../../CMakeLists.txt')
+    }
   }
 }

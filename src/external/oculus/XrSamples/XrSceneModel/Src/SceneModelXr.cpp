@@ -17,13 +17,19 @@ Copyright : Copyright (c) Facebook Technologies, LLC and its affiliates. All rig
 #include <math.h>
 #include <string>
 #include <time.h>
-#include <unistd.h>
 #include <unordered_set>
+
+#if defined(ANDROID)
+#include <unistd.h>
 #include <pthread.h>
 #include <sys/prctl.h> // for prctl( PR_SET_NAME )
 #include <android/log.h>
 #include <android/native_window_jni.h> // for native window JNI
 #include <android_native_app_glue.h>
+#else
+#include <thread>
+#endif
+
 #include <assert.h>
 
 #include "SceneModelHelpers.h"
@@ -32,12 +38,20 @@ Copyright : Copyright (c) Facebook Technologies, LLC and its affiliates. All rig
 #include "SimpleXrInput.h"
 
 #include <openxr/fb_spatial_entity.h>
-#include <openxr/fb_spatial_entity_storage.h>
-#include <openxr/fb_spatial_entity_query.h>
-#include <openxr/fb_spatial_entity_container.h>
 #include <openxr/fb_scene.h>
-#include <openxr/fb_scene_capture.h>
 #include <openxr/meta_spatial_entity_mesh.h>
+
+
+
+#if defined(_WIN32)
+// Favor the high performance NVIDIA or AMD GPUs
+extern "C" {
+// http://developer.download.nvidia.com/devzone/devcenter/gamegraphics/files/OptimusRenderingPolicies.pdf
+__declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
+// https://gpuopen.com/learn/amdpowerxpressrequesthighperformance/
+__declspec(dllexport) DWORD AmdPowerXpressRequestHighPerformance = 0x00000001;
+}
+#endif // defined(_WIN32)
 
 using namespace OVR;
 
@@ -45,11 +59,23 @@ using namespace OVR;
 #define EGL_OPENGL_ES3_BIT_KHR 0x0040
 #endif
 
+#if defined(ANDROID)
 #define DEBUG 1
 #define OVR_LOG_TAG "SceneModelXr"
 
 #define ALOGE(...) __android_log_print(ANDROID_LOG_ERROR, OVR_LOG_TAG, __VA_ARGS__)
 #define ALOGV(...) __android_log_print(ANDROID_LOG_VERBOSE, OVR_LOG_TAG, __VA_ARGS__)
+#else
+#include <cinttypes>
+#define ALOGE(...)       \
+    printf("ERROR: ");   \
+    printf(__VA_ARGS__); \
+    printf("\n")
+#define ALOGV(...)       \
+    printf("VERBOSE: "); \
+    printf(__VA_ARGS__); \
+    printf("\n")
+#endif
 
 static const int CPU_LEVEL = 2;
 static const int GPU_LEVEL = 3;
@@ -57,25 +83,13 @@ static const int NUM_MULTI_SAMPLES = 4;
 
 static const uint32_t MAX_PERSISTENT_SPACES = 100;
 
-__attribute__((unused)) static void LOG_POSE(const char* msg, const XrPosef* p) {
-    ALOGV(
-        "%s: orientation = { %f %f %f %f }, position = { %f %f %f }",
-        msg,
-        p->orientation.x,
-        p->orientation.y,
-        p->orientation.z,
-        p->orientation.w,
-        p->position.x,
-        p->position.y,
-        p->position.z);
-}
-
 union ovrCompositorLayer_Union {
     XrCompositionLayerProjection Projection;
     XrCompositionLayerQuad Quad;
     XrCompositionLayerCylinderKHR Cylinder;
     XrCompositionLayerCubeKHR Cube;
     XrCompositionLayerEquirectKHR Equirect;
+    XrCompositionLayerPassthroughFB Passthrough;
 };
 
 enum { ovrMaxLayerCount = 16 };
@@ -142,18 +156,18 @@ bool isValid(const XrUuidEXT& uuid) {
 static const std::map<std::string, XrColor4f> SemanticLabelToColorMap = {
     {"TABLE", {1.0f, 0.0f, 0.0f, 0.2f}},
     {"COUCH", {0.0f, 1.0f, 0.0f, 0.2f}},
-    {"FLOOR", {0.2f, 0.2f, 0.8f, 1.0f}},
-    {"CEILING", {0.3f, 0.3f, 0.3f, 1.0f}},
-    {"WALL_FACE", {0.5f, 0.5f, 0.0f, 1.0f}},
-    {"INVISIBLE_WALL_FACE", {0.7f, 0.9f, 0.3f, 1.0f}},
-    {"WINDOW_FRAME", {0.0f, 0.5f, 0.6f, 0.8f}},
-    {"DOOR_FRAME", {0.0f, 0.2f, 0.2f, 1.0f}},
+    {"FLOOR", {0.2f, 0.2f, 0.8f, 0.8f}},
+    {"CEILING", {0.3f, 0.3f, 0.3f, 0.8f}},
+    {"WALL_FACE", {0.5f, 0.5f, 0.0f, 0.8f}},
+    {"INVISIBLE_WALL_FACE", {0.7f, 0.9f, 0.3f, 0.8f}},
+    {"WINDOW_FRAME", {0.0f, 0.5f, 0.6f, 0.6f}},
+    {"DOOR_FRAME", {0.0f, 0.2f, 0.2f, 0.6f}},
     {"STORAGE", {0.5f, 0.1f, 0.4f, 0.6f}},
     {"BED", {0.0f, 0.7f, 0.9f, 0.6f}},
     {"SCREEN", {0.4f, 0.4f, 0.4f, 0.8f}},
     {"LAMP", {0.9f, 0.9f, 0.9f, 0.8f}},
     {"PLANT", {0.1f, 0.9f, 0.2f, 0.6f}},
-    {"WALL_ART", {1.0f, 0.6f, 0.0f, 1.0f}},
+    {"WALL_ART", {1.0f, 0.6f, 0.0f, 0.6f}},
     {"OTHER", {1.0f, 0.0f, 1.0f, 0.2f}}};
 
 XrColor4f GetColorForSemanticLabels(const std::string& labels) {
@@ -172,6 +186,8 @@ XrColor4f GetColorForSemanticLabels(const std::string& labels) {
     return SemanticLabelToColorMap.at(firstLabel);
 }
 
+
+
 /*
 ================================================================================
 
@@ -180,7 +196,6 @@ OpenXR Utility Functions
 ================================================================================
 */
 
-#if defined(DEBUG)
 static void OXR_CheckErrors(XrResult result, const char* function, bool failOnError) {
     if (XR_FAILED(result)) {
         char errorBuffer[XR_MAX_RESULT_STRING_SIZE];
@@ -192,7 +207,6 @@ static void OXR_CheckErrors(XrResult result, const char* function, bool failOnEr
         }
     }
 }
-#endif
 
 #if defined(DEBUG)
 #define OXR(func) OXR_CheckErrors(func, #func, true);
@@ -208,6 +222,7 @@ Egl Utility Functions
 ================================================================================
 */
 
+#if defined(XR_USE_GRAPHICS_API_OPENGL_ES)
 static const char* EglErrorString(const EGLint error) {
     switch (error) {
         case EGL_SUCCESS:
@@ -244,6 +259,7 @@ static const char* EglErrorString(const EGLint error) {
             return "unknown";
     }
 }
+#endif
 
 /*
 ================================================================================
@@ -257,6 +273,7 @@ struct ovrEgl {
     void Clear();
     void CreateContext(const ovrEgl* shareEgl);
     void DestroyContext();
+#if defined(XR_USE_GRAPHICS_API_OPENGL_ES)
     EGLint MajorVersion;
     EGLint MinorVersion;
     EGLDisplay Display;
@@ -264,9 +281,14 @@ struct ovrEgl {
     EGLSurface TinySurface;
     EGLSurface MainSurface;
     EGLContext Context;
+#elif defined(XR_USE_GRAPHICS_API_OPENGL)
+    HDC hDC;
+    HGLRC hGLRC;
+#endif
 };
 
 void ovrEgl::Clear() {
+#if defined(XR_USE_GRAPHICS_API_OPENGL_ES)
     MajorVersion = 0;
     MinorVersion = 0;
     Display = 0;
@@ -274,8 +296,13 @@ void ovrEgl::Clear() {
     TinySurface = EGL_NO_SURFACE;
     MainSurface = EGL_NO_SURFACE;
     Context = EGL_NO_CONTEXT;
+#elif defined(XR_USE_GRAPHICS_API_OPENGL)
+    hDC = 0;
+    hGLRC = 0;
+#endif
 }
 
+#if defined(XR_USE_GRAPHICS_API_OPENGL_ES)
 void ovrEgl::CreateContext(const ovrEgl* shareEgl) {
     if (Display != 0) {
         return;
@@ -402,6 +429,18 @@ void ovrEgl::DestroyContext() {
     }
 }
 
+#elif defined(XR_USE_GRAPHICS_API_OPENGL)
+
+void ovrEgl::CreateContext(const ovrEgl*) {
+    ovrGl_CreateContext_Windows(&hDC, &hGLRC);
+}
+
+void ovrEgl::DestroyContext() {
+    ovrGl_DestroyContext_Windows();
+}
+
+#endif
+
 /*
 ================================================================================
 
@@ -411,6 +450,15 @@ ovrApp
 */
 
 struct ovrExtensionFunctionPointers {
+    PFN_xrCreatePassthroughFB xrCreatePassthroughFB = nullptr;
+    PFN_xrDestroyPassthroughFB xrDestroyPassthroughFB = nullptr;
+    PFN_xrCreatePassthroughLayerFB xrCreatePassthroughLayerFB = nullptr;
+    PFN_xrDestroyPassthroughLayerFB xrDestroyPassthroughLayerFB = nullptr;
+    PFN_xrPassthroughLayerResumeFB xrPassthroughLayerResumeFB = nullptr;
+    PFN_xrPassthroughLayerPauseFB xrPassthroughLayerPauseFB = nullptr;
+    PFN_xrPassthroughLayerSetStyleFB xrPassthroughLayerSetStyleFB = nullptr;
+    PFN_xrPassthroughStartFB xrPassthroughStartFB = nullptr;
+    PFN_xrPassthroughPauseFB xrPassthroughPauseFB = nullptr;
     PFN_xrEnumerateSpaceSupportedComponentsFB xrEnumerateSpaceSupportedComponentsFB = nullptr;
     PFN_xrGetSpaceComponentStatusFB xrGetSpaceComponentStatusFB = nullptr;
     PFN_xrSetSpaceComponentStatusFB xrSetSpaceComponentStatusFB = nullptr;
@@ -423,7 +471,9 @@ struct ovrExtensionFunctionPointers {
     PFN_xrGetSpaceRoomLayoutFB xrGetSpaceRoomLayoutFB = nullptr;
     PFN_xrGetSpaceContainerFB xrGetSpaceContainerFB = nullptr;
     PFN_xrGetSpaceTriangleMeshMETA xrGetSpaceTriangleMeshMETA = nullptr;
+#if defined(ANDROID)
     PFN_xrRequestSceneCaptureFB xrRequestSceneCaptureFB = nullptr;
+#endif
 };
 
 struct ovrApp {
@@ -436,7 +486,11 @@ struct ovrApp {
     void CollectSpaceContainerUuids(XrSpace space, std::unordered_set<std::string>& UuidSet);
 
     ovrEgl Egl;
+#if defined(XR_USE_PLATFORM_ANDROID)
+    ANativeWindow* NativeWindow;
     bool Resumed;
+#endif // defined(XR_USE_PLATFORM_ANDROID)
+    bool ShouldExit;
     bool Focused;
 
     XrSession Session;
@@ -495,10 +549,20 @@ struct ovrApp {
     ovrAppRenderer AppRenderer;
 
     std::unordered_set<std::string> UuidSet;
+
+    bool DisplayPassthrough = true;
+    XrPassthroughFB Passthrough = XR_NULL_HANDLE;
+    XrPassthroughLayerFB PassthroughLayer = XR_NULL_HANDLE;
+
+
 };
 
 void ovrApp::Clear() {
+#if defined(XR_USE_PLATFORM_ANDROID)
+    NativeWindow = NULL;
     Resumed = false;
+#endif // defined(XR_USE_PLATFORM_ANDROID)
+    ShouldExit = false;
     Focused = false;
     instance = XR_NULL_HANDLE;
     Session = XR_NULL_HANDLE;
@@ -531,7 +595,9 @@ void ovrApp::Clear() {
 
 void ovrApp::HandleSessionStateChanges(XrSessionState state) {
     if (state == XR_SESSION_STATE_READY) {
+#if defined(XR_USE_PLATFORM_ANDROID)
         assert(Resumed);
+#endif // defined(XR_USE_PLATFORM_ANDROID)
         assert(SessionActive == false);
 
         XrSessionBeginInfo sessionBeginInfo = {XR_TYPE_SESSION_BEGIN_INFO};
@@ -542,6 +608,7 @@ void ovrApp::HandleSessionStateChanges(XrSessionState state) {
 
         SessionActive = (result == XR_SUCCESS);
 
+#if defined(XR_USE_PLATFORM_ANDROID)
         // Set session state once we have entered VR mode and have a valid session object.
         if (SessionActive) {
             XrPerfSettingsLevelEXT cpuPerfLevel = XR_PERF_SETTINGS_LEVEL_SUSTAINED_HIGH_EXT;
@@ -604,8 +671,11 @@ void ovrApp::HandleSessionStateChanges(XrSessionState state) {
             OXR(pfnSetAndroidApplicationThreadKHR(
                 Session, XR_ANDROID_THREAD_TYPE_RENDERER_MAIN_KHR, RenderThreadTid));
         }
+#endif // defined(XR_USE_PLATFORM_ANDROID)
     } else if (state == XR_SESSION_STATE_STOPPING) {
+#if defined(XR_USE_PLATFORM_ANDROID)
         assert(Resumed == false);
+#endif // defined(XR_USE_PLATFORM_ANDROID)
         assert(SessionActive);
 
         OXR(xrEndSession(Session));
@@ -692,7 +762,7 @@ std::string GetSemanticLabels(ovrApp& app, const XrSpace space) {
         XR_TYPE_SEMANTIC_LABELS_SUPPORT_INFO_FB,
         nullptr,
         XR_SEMANTIC_LABELS_SUPPORT_MULTIPLE_SEMANTIC_LABELS_BIT_FB | XR_SEMANTIC_LABELS_SUPPORT_ACCEPT_DESK_TO_TABLE_MIGRATION_BIT_FB |
-        XR_SEMANTIC_LABELS_SUPPORT_ACCEPT_INVISIBLE_WALL_FACE_BIT_FB,
+            XR_SEMANTIC_LABELS_SUPPORT_ACCEPT_INVISIBLE_WALL_FACE_BIT_FB,
         recognizedLabels.c_str()};
 
     XrSemanticLabelsFB labels = {XR_TYPE_SEMANTIC_LABELS_FB, &semanticLabelsSupportInfo, 0};
@@ -861,6 +931,9 @@ void ovrApp::HandleXrEvents() {
                     case XR_SESSION_STATE_STOPPING:
                         HandleSessionStateChanges(session_state_changed_event->state);
                         break;
+                    case XR_SESSION_STATE_EXITING:
+                        ShouldExit = true;
+                        break;
                     default:
                         break;
                 }
@@ -980,6 +1053,7 @@ void ovrApp::HandleXrEvents() {
                             CollectRoomLayoutUuids(result.space, UuidSet);
                         }
                     }
+
                 }
             } break;
             case XR_TYPE_EVENT_DATA_SPACE_QUERY_COMPLETE_FB: {
@@ -1017,6 +1091,7 @@ Native Activity
 ================================================================================
 */
 
+#if defined(ANDROID)
 /**
  * Process the next main command.
  */
@@ -1067,6 +1142,7 @@ static void app_handle_cmd(struct android_app* androidApp, int32_t cmd) {
         }
     }
 }
+#endif
 
 static bool QueryAllAnchors(ovrApp& app) {
     XrSpaceQueryInfoFB queryInfo = {
@@ -1241,12 +1317,52 @@ void UpdateSceneMeshes(ovrApp& app, const XrFrameState& frameState) {
     }
 }
 
+void CreatePassthrough(ovrApp& app) {
+    XrPassthroughCreateInfoFB ptci = {XR_TYPE_PASSTHROUGH_CREATE_INFO_FB};
+    XrResult result;
+    OXR(result = app.FunPtrs.xrCreatePassthroughFB(app.Session, &ptci, &app.Passthrough));
+
+    if (XR_SUCCEEDED(result)) {
+        XrPassthroughLayerCreateInfoFB plci = {XR_TYPE_PASSTHROUGH_LAYER_CREATE_INFO_FB};
+        plci.passthrough = app.Passthrough;
+        plci.purpose = XR_PASSTHROUGH_LAYER_PURPOSE_RECONSTRUCTION_FB;
+        OXR(app.FunPtrs.xrCreatePassthroughLayerFB(app.Session, &plci, &app.PassthroughLayer));
+    }
+
+    if (XR_SUCCEEDED(result)) {
+        XrPassthroughStyleFB style = {XR_TYPE_PASSTHROUGH_STYLE_FB};
+        OXR(app.FunPtrs.xrPassthroughLayerResumeFB(app.PassthroughLayer));
+        style.textureOpacityFactor = 0.5f;
+        style.edgeColor = {0.0f, 0.0f, 0.0f, 0.0f};
+        OXR(app.FunPtrs.xrPassthroughLayerSetStyleFB(app.PassthroughLayer, &style));
+    }
+
+    if (result != XR_ERROR_FEATURE_UNSUPPORTED) {
+        OXR(result = app.FunPtrs.xrPassthroughStartFB(app.Passthrough));
+    }
+}
+
+void DestroyPassthrough(ovrApp& app) {
+    if (app.PassthroughLayer) {
+        OXR(app.FunPtrs.xrDestroyPassthroughLayerFB(app.PassthroughLayer));
+    }
+    if (app.Passthrough) {
+        OXR(app.FunPtrs.xrDestroyPassthroughFB(app.Passthrough));
+    }
+}
+
+#if defined(XR_USE_PLATFORM_ANDROID)
 /**
  * This is the main entry point of a native application that is using
  * android_native_app_glue.  It runs in its own thread, with its own
  * event loop for receiving input events and doing other things.
  */
 void android_main(struct android_app* androidApp) {
+#else
+int main() {
+#endif
+
+#if defined(XR_USE_PLATFORM_ANDROID)
     ALOGV("----------------------------------------------------------------");
     ALOGV("android_app_entry()");
     ALOGV("    android_main()");
@@ -1256,6 +1372,7 @@ void android_main(struct android_app* androidApp) {
 
     // Note that AttachCurrentThread will reset the thread name.
     prctl(PR_SET_NAME, (long)"OVR::Main", 0, 0, 0);
+#endif
 
     ovrApp app;
     app.Clear();
@@ -1263,6 +1380,7 @@ void android_main(struct android_app* androidApp) {
     // Start the app with a query.
     app.NextQueryType = ovrApp::QueryType::QueryAll;
 
+#if defined(XR_USE_PLATFORM_ANDROID)
     PFN_xrInitializeLoaderKHR xrInitializeLoaderKHR;
     xrGetInstanceProcAddr(
         XR_NULL_HANDLE, "xrInitializeLoaderKHR", (PFN_xrVoidFunction*)&xrInitializeLoaderKHR);
@@ -1273,6 +1391,7 @@ void android_main(struct android_app* androidApp) {
         loaderInitializeInfoAndroid.applicationContext = androidApp->activity->clazz;
         xrInitializeLoaderKHR((XrLoaderInitInfoBaseHeaderKHR*)&loaderInitializeInfoAndroid);
     }
+#endif
 
     // Log available layers.
     {
@@ -1301,49 +1420,40 @@ void android_main(struct android_app* androidApp) {
 
     // Check that the extensions required are present.
     const char* const requiredExtensionNames[] = {
+#if defined(XR_USE_GRAPHICS_API_OPENGL_ES)
         XR_KHR_OPENGL_ES_ENABLE_EXTENSION_NAME,
+#elif defined(XR_USE_GRAPHICS_API_OPENGL)
+        XR_KHR_OPENGL_ENABLE_EXTENSION_NAME,
+#endif
+#if defined(XR_USE_PLATFORM_ANDROID)
         XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME,
         XR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME,
+#endif
+        XR_FB_PASSTHROUGH_EXTENSION_NAME,
         XR_FB_SPATIAL_ENTITY_EXTENSION_NAME,
         XR_FB_SPATIAL_ENTITY_QUERY_EXTENSION_NAME,
         XR_FB_SPATIAL_ENTITY_STORAGE_EXTENSION_NAME,
         XR_FB_SPATIAL_ENTITY_CONTAINER_EXTENSION_NAME,
         XR_META_SPATIAL_ENTITY_MESH_EXTENSION_NAME,
         XR_FB_SCENE_EXTENSION_NAME,
-        XR_FB_SCENE_CAPTURE_EXTENSION_NAME};
+#if defined(ANDROID)
+        XR_FB_SCENE_CAPTURE_EXTENSION_NAME,
+#endif
+    };
     const uint32_t numRequiredExtensions =
         sizeof(requiredExtensionNames) / sizeof(requiredExtensionNames[0]);
 
     // Check the list of required extensions against what is supported by the runtime.
     {
-        XrResult result;
-        PFN_xrEnumerateInstanceExtensionProperties xrEnumerateInstanceExtensionProperties;
-        OXR(result = xrGetInstanceProcAddr(
-                XR_NULL_HANDLE,
-                "xrEnumerateInstanceExtensionProperties",
-                (PFN_xrVoidFunction*)&xrEnumerateInstanceExtensionProperties));
-        if (result != XR_SUCCESS) {
-            ALOGE("Failed to get xrEnumerateInstanceExtensionProperties function pointer.");
-            exit(1);
-        }
-
-        uint32_t numInputExtensions = 0;
         uint32_t numOutputExtensions = 0;
-        OXR(xrEnumerateInstanceExtensionProperties(
-            NULL, numInputExtensions, &numOutputExtensions, NULL));
+        OXR(xrEnumerateInstanceExtensionProperties(nullptr, 0, &numOutputExtensions, nullptr));
         ALOGV("xrEnumerateInstanceExtensionProperties found %u extension(s).", numOutputExtensions);
 
-        numInputExtensions = numOutputExtensions;
-
-        auto extensionProperties = new XrExtensionProperties[numOutputExtensions];
-
-        for (uint32_t i = 0; i < numOutputExtensions; i++) {
-            extensionProperties[i].type = XR_TYPE_EXTENSION_PROPERTIES;
-            extensionProperties[i].next = NULL;
-        }
+        auto extensionProperties =
+            std::vector<XrExtensionProperties>(numOutputExtensions, {XR_TYPE_EXTENSION_PROPERTIES});
 
         OXR(xrEnumerateInstanceExtensionProperties(
-            NULL, numInputExtensions, &numOutputExtensions, extensionProperties));
+            NULL, numOutputExtensions, &numOutputExtensions, extensionProperties.data()));
         for (uint32_t i = 0; i < numOutputExtensions; i++) {
             ALOGV("Extension #%d = '%s'.", i, extensionProperties[i].extensionName);
         }
@@ -1362,8 +1472,6 @@ void android_main(struct android_app* androidApp) {
                 exit(1);
             }
         }
-
-        delete[] extensionProperties;
     }
 
     // Create the OpenXR instance.
@@ -1427,6 +1535,7 @@ void android_main(struct android_app* androidApp) {
 
     assert(ovrMaxLayerCount <= systemProperties.graphicsProperties.maxLayerCount);
 
+#if defined(XR_USE_GRAPHICS_API_OPENGL_ES)
     // Get the graphics requirements.
     PFN_xrGetOpenGLESGraphicsRequirementsKHR pfnGetOpenGLESGraphicsRequirementsKHR = NULL;
     OXR(xrGetInstanceProcAddr(
@@ -1437,6 +1546,18 @@ void android_main(struct android_app* androidApp) {
     XrGraphicsRequirementsOpenGLESKHR graphicsRequirements = {
         XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_ES_KHR};
     OXR(pfnGetOpenGLESGraphicsRequirementsKHR(instance, systemId, &graphicsRequirements));
+#elif defined(XR_USE_GRAPHICS_API_OPENGL)
+    // Get the graphics requirements.
+    PFN_xrGetOpenGLGraphicsRequirementsKHR pfnGetOpenGLGraphicsRequirementsKHR = NULL;
+    OXR(xrGetInstanceProcAddr(
+        instance,
+        "xrGetOpenGLGraphicsRequirementsKHR",
+        (PFN_xrVoidFunction*)(&pfnGetOpenGLGraphicsRequirementsKHR)));
+
+    XrGraphicsRequirementsOpenGLKHR graphicsRequirements = {};
+    graphicsRequirements.type = XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_KHR;
+    OXR(pfnGetOpenGLGraphicsRequirementsKHR(instance, systemId, &graphicsRequirements));
+#endif
 
     // Create the EGL Context
     app.Egl.CreateContext(nullptr);
@@ -1455,19 +1576,32 @@ void android_main(struct android_app* androidApp) {
 
     app.CpuLevel = CPU_LEVEL;
     app.GpuLevel = GPU_LEVEL;
+#if defined(ANDROID)
     app.MainThreadTid = gettid();
+#else
+    app.MainThreadTid = (int)std::hash<std::thread::id>{}(std::this_thread::get_id());
+#endif
 
     app.SystemId = systemId;
 
     // Create the OpenXR Session.
-    XrGraphicsBindingOpenGLESAndroidKHR graphicsBindingAndroidGLES = {
-        XR_TYPE_GRAPHICS_BINDING_OPENGL_ES_ANDROID_KHR};
-    graphicsBindingAndroidGLES.display = app.Egl.Display;
-    graphicsBindingAndroidGLES.config = app.Egl.Config;
-    graphicsBindingAndroidGLES.context = app.Egl.Context;
+#if defined(XR_USE_GRAPHICS_API_OPENGL_ES)
+    XrGraphicsBindingOpenGLESAndroidKHR graphicsBinding = {};
+    graphicsBinding.type = XR_TYPE_GRAPHICS_BINDING_OPENGL_ES_ANDROID_KHR;
+    graphicsBinding.next = NULL;
+    graphicsBinding.display = app.Egl.Display;
+    graphicsBinding.config = app.Egl.Config;
+    graphicsBinding.context = app.Egl.Context;
+#elif defined(XR_USE_GRAPHICS_API_OPENGL)
+    XrGraphicsBindingOpenGLWin32KHR graphicsBinding = {};
+    graphicsBinding.type = XR_TYPE_GRAPHICS_BINDING_OPENGL_WIN32_KHR;
+    graphicsBinding.next = NULL;
+    graphicsBinding.hDC = app.Egl.hDC;
+    graphicsBinding.hGLRC = app.Egl.hGLRC;
+#endif
 
     XrSessionCreateInfo sessionCreateInfo = {XR_TYPE_SESSION_CREATE_INFO};
-    sessionCreateInfo.next = &graphicsBindingAndroidGLES;
+    sessionCreateInfo.next = &graphicsBinding;
     sessionCreateInfo.createFlags = 0;
     sessionCreateInfo.systemId = app.SystemId;
 
@@ -1603,7 +1737,7 @@ void android_main(struct android_app* androidApp) {
         ALOGV("Created stage space");
     }
 
-    auto projections = new XrView[NUM_EYES];
+    XrView projections[NUM_EYES];
     for (int eye = 0; eye < NUM_EYES; eye++) {
         projections[eye] = XrView{XR_TYPE_VIEW};
     }
@@ -1626,10 +1760,18 @@ void android_main(struct android_app* androidApp) {
     // Create the swapchain.
     OXR(xrCreateSwapchain(app.Session, &swapChainCreateInfo, &app.ColorSwapChain));
     OXR(xrEnumerateSwapchainImages(app.ColorSwapChain, 0, &app.SwapChainLength, nullptr));
+#if defined(XR_USE_GRAPHICS_API_OPENGL_ES)
     auto images = new XrSwapchainImageOpenGLESKHR[app.SwapChainLength];
+#elif defined(XR_USE_GRAPHICS_API_OPENGL)
+    auto images = new XrSwapchainImageOpenGLKHR[app.SwapChainLength];
+#endif
     // Populate the swapchain image array.
     for (uint32_t i = 0; i < app.SwapChainLength; i++) {
+#if defined(XR_USE_GRAPHICS_API_OPENGL_ES)
         images[i] = {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR};
+#elif defined(XR_USE_GRAPHICS_API_OPENGL)
+        images[i] = {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_KHR};
+#endif
     }
 
     OXR(xrEnumerateSwapchainImages(
@@ -1649,8 +1791,10 @@ void android_main(struct android_app* androidApp) {
     delete[] images;
     delete[] colorTextures;
 
+#if defined(ANDROID)
     androidApp->userData = &app;
     androidApp->onAppCmd = app_handle_cmd;
+#endif
 
     bool stageBoundsDirty = true;
 
@@ -1661,7 +1805,42 @@ void android_main(struct android_app* androidApp) {
     SimpleXrInput* input = CreateSimpleXrInput(instance);
     input->BeginSession(app.Session);
 
-    /// Hook up extensions for spatial entity
+    OXR(xrGetInstanceProcAddr(
+        instance,
+        "xrCreatePassthroughFB",
+        (PFN_xrVoidFunction*)(&app.FunPtrs.xrCreatePassthroughFB)));
+    OXR(xrGetInstanceProcAddr(
+        instance,
+        "xrDestroyPassthroughFB",
+        (PFN_xrVoidFunction*)(&app.FunPtrs.xrDestroyPassthroughFB)));
+    OXR(xrGetInstanceProcAddr(
+        instance,
+        "xrCreatePassthroughLayerFB",
+        (PFN_xrVoidFunction*)(&app.FunPtrs.xrCreatePassthroughLayerFB)));
+    OXR(xrGetInstanceProcAddr(
+        instance,
+        "xrDestroyPassthroughLayerFB",
+        (PFN_xrVoidFunction*)(&app.FunPtrs.xrDestroyPassthroughLayerFB)));
+    OXR(xrGetInstanceProcAddr(
+        instance,
+        "xrPassthroughLayerResumeFB",
+        (PFN_xrVoidFunction*)(&app.FunPtrs.xrPassthroughLayerResumeFB)));
+    OXR(xrGetInstanceProcAddr(
+        instance,
+        "xrPassthroughLayerPauseFB",
+        (PFN_xrVoidFunction*)(&app.FunPtrs.xrPassthroughLayerPauseFB)));
+    OXR(xrGetInstanceProcAddr(
+        instance,
+        "xrPassthroughLayerSetStyleFB",
+        (PFN_xrVoidFunction*)(&app.FunPtrs.xrPassthroughLayerSetStyleFB)));
+    OXR(xrGetInstanceProcAddr(
+        instance,
+        "xrPassthroughStartFB",
+        (PFN_xrVoidFunction*)(&app.FunPtrs.xrPassthroughStartFB)));
+    OXR(xrGetInstanceProcAddr(
+        instance,
+        "xrPassthroughPauseFB",
+        (PFN_xrVoidFunction*)(&app.FunPtrs.xrPassthroughPauseFB)));
     OXR(xrGetInstanceProcAddr(
         instance,
         "xrEnumerateSpaceSupportedComponentsFB",
@@ -1708,16 +1887,26 @@ void android_main(struct android_app* androidApp) {
         instance,
         "xrGetSpaceTriangleMeshMETA",
         (PFN_xrVoidFunction*)(&app.FunPtrs.xrGetSpaceTriangleMeshMETA)));
+#if defined(ANDROID)
     OXR(xrGetInstanceProcAddr(
         instance,
         "xrRequestSceneCaptureFB",
         (PFN_xrVoidFunction*)(&app.FunPtrs.xrRequestSceneCaptureFB)));
+#endif
+
+    CreatePassthrough(app);
 
     // Two values for left and right controllers.
     std::array<XrTime, 2> lastInputTimes = {0, 0};
-    while (androidApp->destroyRequested == 0) {
+#if defined(XR_USE_PLATFORM_ANDROID)
+    while (androidApp->destroyRequested == 0)
+#else
+    while (true)
+#endif
+    {
         frameCount++;
 
+#if defined(XR_USE_PLATFORM_ANDROID)
         // Read all pending events.
         for (;;) {
             int events;
@@ -1737,8 +1926,23 @@ void android_main(struct android_app* androidApp) {
                 source->process(androidApp, source);
             }
         }
+#elif defined(XR_USE_PLATFORM_WIN32)
+        MSG msg;
+        while (::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE) > 0) {
+            if (msg.message == WM_QUIT) {
+                app.ShouldExit = true;
+            } else {
+                ::TranslateMessage(&msg);
+                ::DispatchMessage(&msg);
+            }
+        }
+#endif
 
         app.HandleXrEvents();
+
+        if (app.ShouldExit) {
+            break;
+        }
 
         if (app.SessionActive == false) {
             continue;
@@ -1781,6 +1985,7 @@ void android_main(struct android_app* androidApp) {
             app.ClearScene = false;
 
             app.UuidSet.clear();
+
 
             app.IsQueryComplete = true;
         }
@@ -1891,6 +2096,8 @@ void android_main(struct android_app* androidApp) {
             CycleSceneVisualizationMode(app);
         }
 
+
+#if defined(ANDROID)
         // Right Index Trigger: Request scene capture.
         if (input->IsTriggerPressed(SimpleXrInput::Side_Right)) {
             XrAsyncRequestIdFB requestId;
@@ -1900,6 +2107,19 @@ void android_main(struct android_app* androidApp) {
             OXR(app.FunPtrs.xrRequestSceneCaptureFB(app.Session, &request, &requestId));
             lastInputTimes[1] = frameState.predictedDisplayTime;
         }
+#endif
+
+        // Right Thumb Click: Toggle Passthrough.
+        if (input->IsThumbClickPressed(SimpleXrInput::Side_Right)) {
+            app.DisplayPassthrough = !app.DisplayPassthrough;
+            if (app.DisplayPassthrough) {
+                OXR(app.FunPtrs.xrPassthroughStartFB(app.Passthrough));
+            } else {
+                OXR(app.FunPtrs.xrPassthroughPauseFB(app.Passthrough));
+            }
+            lastInputTimes[1] = frameState.predictedDisplayTime;
+        }
+
 
         // Simple animation
         double timeInSeconds = FromXrTime(frameState.predictedDisplayTime);
@@ -1987,6 +2207,14 @@ void android_main(struct android_app* androidApp) {
         app.LayerCount = 0;
         memset(app.Layers, 0, sizeof(ovrCompositorLayer_Union) * ovrMaxLayerCount);
 
+        if (app.DisplayPassthrough && app.PassthroughLayer != XR_NULL_HANDLE) {
+            XrCompositionLayerPassthroughFB passthroughLayer = {XR_TYPE_COMPOSITION_LAYER_PASSTHROUGH_FB};
+            passthroughLayer.layerHandle = app.PassthroughLayer;
+            passthroughLayer.flags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+            passthroughLayer.space = XR_NULL_HANDLE;
+            app.Layers[app.LayerCount++].Passthrough = passthroughLayer;
+        }
+
         XrCompositionLayerProjection proj_layer = {XR_TYPE_COMPOSITION_LAYER_PROJECTION};
         proj_layer.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
         proj_layer.layerFlags |= XR_COMPOSITION_LAYER_CORRECT_CHROMATIC_ABERRATION_BIT;
@@ -2031,10 +2259,9 @@ void android_main(struct android_app* androidApp) {
 
     app.AppRenderer.Destroy();
 
-    delete[] projections;
+    DestroyPassthrough(app);
 
-    app.Egl.DestroyContext();
-
+    OXR(xrDestroySwapchain(app.ColorSwapChain));
     OXR(xrDestroySpace(app.HeadSpace));
     OXR(xrDestroySpace(app.LocalSpace));
     // StageSpace is optional.
@@ -2042,7 +2269,12 @@ void android_main(struct android_app* androidApp) {
         OXR(xrDestroySpace(app.StageSpace));
     }
     OXR(xrDestroySession(app.Session));
+
+    app.Egl.DestroyContext();
+
     OXR(xrDestroyInstance(instance));
 
+#if defined(XR_USE_PLATFORM_ANDROID)
     (*androidApp->activity->vm).DetachCurrentThread();
+#endif // defined(XR_USE_PLATFORM_ANDROID)
 }

@@ -12,19 +12,15 @@ Authors     :   Jonathan E. Wright
 #if !defined(OVRLib_Log_h)
 #define OVRLib_Log_h
 
-#include <atomic>
-#include <chrono>
-#include <memory>
-
-#include "OVR_Types.h"
-#include "OVR_Std.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h> /* va_list, va_start, va_arg, va_end */
 #include <time.h>
-#include <stdint.h>
 #include <string.h>
-#include <assert.h>
+#include <atomic>
+#include <chrono>
+
+#include "OVR_Types.h"
 
 #if defined(WIN32) || defined(WIN64) || defined(_WIN32) || defined(_WIN64)
 #if !defined(NOMINMAX)

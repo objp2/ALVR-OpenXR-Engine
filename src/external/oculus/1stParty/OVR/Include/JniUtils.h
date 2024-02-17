@@ -16,7 +16,9 @@ Authors     :   J.M.P. van Waveren, Jonathan E. Wright
 
 #if defined(OVR_OS_ANDROID)
 #include "OVR_LogUtils.h"
-#endif // defined(OVR_OS_ANDROID)
+#endif
+
+#include "OVR_Std.h"
 
 //==============================================================
 // Various helper functions.
@@ -613,6 +615,7 @@ inline const char* ovr_GetCurrentPackageName(
         }
     }
     // OVR_LOG( "ovr_GetCurrentPackageName() = %s", packageName );
+
     return packageName;
 }
 
@@ -745,6 +748,18 @@ inline bool ovr_IsCurrentPackage(JNIEnv* jni, jobject activityObject, const char
     OVR_UNUSED(packageName);
     return false;
 }
+
+inline const char* ovr_GetCurrentPackageName(
+    JNIEnv* jni,
+    jobject activityObject,
+    char* packageName,
+    int const maxLen) {
+    packageName[0] = '\0';
+    const char* currentPackageName = "test.package.name";
+    OVR::OVR_sprintf(packageName, maxLen, "%s", currentPackageName);
+    return packageName;
+}
+
 #endif
 
 #if defined(OVR_OS_ANDROID)

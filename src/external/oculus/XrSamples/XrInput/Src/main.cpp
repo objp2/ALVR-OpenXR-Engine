@@ -14,7 +14,6 @@ Copyright:  Copyright (c) Facebook Technologies, LLC and its affiliates. All rig
 #include <unordered_map>
 
 #include <openxr/openxr.h>
-#include <openxr/fb_touch_controller_pro.h>
 
 #include "GUI/VRMenuObject.h"
 #include "Render/BitmapFont.h"
@@ -131,18 +130,19 @@ class XrInputSampleApp : public OVRFW::XrApp {
         actionSetWorld_ = CreateActionSet(0, "world_action_set", "World Action Set");
         actionSetTool_ = CreateActionSet(9, "tool_action_set", "Tool Action Set");
 
-        actionSelect_ = CreateAction(
-            actionSetMenu_,
-            XR_ACTION_TYPE_BOOLEAN_INPUT,
-            "select",
-            "Select/Click UI Element" // Displayed to users, should be translated to the user's
-                                      // local language
-        );
-
         // If we do not specify subActionPaths, we cannot use them to distinguish input from
         // separate sources later. It is being used here to allow us to bind the same action
         // to both hands while still being able to query the state of a specific hand.
         XrPath bothHands[]{leftHandPath_, rightHandPath_};
+
+        actionSelect_ = CreateAction(
+            actionSetMenu_,
+            XR_ACTION_TYPE_BOOLEAN_INPUT,
+            "select",
+            "Select/Click UI Element", // Displayed to users, should be translated to the user's
+                                       // local language
+            2,
+            bothHands);
 
         actionGrabRelease_ = CreateAction(
             actionSetWorld_,
@@ -155,8 +155,8 @@ class XrInputSampleApp : public OVRFW::XrApp {
         actionToggleColor_ = CreateAction(
             actionSetTool_, XR_ACTION_TYPE_BOOLEAN_INPUT, "toggle_color", "Change Box Color");
 
-        actionHandsDrop_ =
-            CreateAction(actionSetWorld_, XR_ACTION_TYPE_BOOLEAN_INPUT, "drop_tool", "Drop Tool");
+        actionHandsDrop_ = CreateAction(
+            actionSetWorld_, XR_ACTION_TYPE_BOOLEAN_INPUT, "drop_tool", "Drop Tool", 2, bothHands);
 
         actionSpawnCube_ = CreateAction(
             actionSetTool_, XR_ACTION_TYPE_BOOLEAN_INPUT, "spawn_cube", "Spawn Cube", 2, bothHands);

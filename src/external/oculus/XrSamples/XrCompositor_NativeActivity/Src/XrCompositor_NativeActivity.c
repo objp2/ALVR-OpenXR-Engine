@@ -95,6 +95,7 @@ typedef void(GL_APIENTRY* PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC)(
 
 #define ALOGE(...) __android_log_print(ANDROID_LOG_ERROR, OVR_LOG_TAG, __VA_ARGS__)
 #define ALOGV(...) __android_log_print(ANDROID_LOG_VERBOSE, OVR_LOG_TAG, __VA_ARGS__)
+#define ALOGD(...) __android_log_print(ANDROID_LOG_DEBUG, OVR_LOG_TAG, __VA_ARGS__)
 
 static const int CPU_LEVEL = 2;
 static const int GPU_LEVEL = 3;
@@ -274,6 +275,21 @@ static void ovrEgl_Clear(ovrEgl* egl) {
     egl->Context = EGL_NO_CONTEXT;
 }
 
+/**
+ * Checks if a given flag @flag is present in the list of flags @flags, and
+ * logs an error if it isn't.
+ * @humanName is the human-readable name of the list of flags being checked,
+ * used for logging.
+ */
+static bool checkFlagAndLog(EGLint flags, EGLint flag, const char* humanName) {
+    const bool present = (flags & flag) == flag;
+    if (!present)
+    {
+        ALOGD("        Skipping EGL config because %s %d doesn't have %d flag", humanName, flags, flag);
+    }
+    return present;
+}
+
 static void ovrEgl_CreateContext(ovrEgl* egl, const ovrEgl* shareEgl) {
     if (egl->Display != 0) {
         return;
@@ -309,35 +325,42 @@ static void ovrEgl_CreateContext(ovrEgl* egl, const ovrEgl* shareEgl) {
         0,
         EGL_NONE};
     egl->Config = 0;
+    ALOGD("        Queried %d EGL configs, evaluating ...", numConfigs);
     for (int i = 0; i < numConfigs; i++) {
         EGLint value = 0;
 
+        ALOGD("        Evaluating EGL config %d.", i);
         eglGetConfigAttrib(egl->Display, configs[i], EGL_RENDERABLE_TYPE, &value);
-        if ((value & EGL_OPENGL_ES3_BIT_KHR) != EGL_OPENGL_ES3_BIT_KHR) {
+        if (!checkFlagAndLog(value, EGL_OPENGL_ES3_BIT_KHR, "renderable type"))
+        {
             continue;
         }
 
         // The pbuffer config also needs to be compatible with normal window rendering
         // so it can share textures with the window context.
         eglGetConfigAttrib(egl->Display, configs[i], EGL_SURFACE_TYPE, &value);
-        if ((value & (EGL_WINDOW_BIT | EGL_PBUFFER_BIT)) != (EGL_WINDOW_BIT | EGL_PBUFFER_BIT)) {
+        if (!checkFlagAndLog(value, EGL_WINDOW_BIT | EGL_PBUFFER_BIT, "surface type"))
+        {
             continue;
         }
 
         int j = 0;
+        ALOGD("        Checking EGL config attributes to make sure they match what we want...");
         for (; configAttribs[j] != EGL_NONE; j += 2) {
             eglGetConfigAttrib(egl->Display, configs[i], configAttribs[j], &value);
             if (value != configAttribs[j + 1]) {
+                ALOGD("        Skipping EGL config due to mismatch in config attribute %d: expected %d, got %d", j / 2, configAttribs[j + 1], value);
                 break;
             }
         }
         if (configAttribs[j] == EGL_NONE) {
+            ALOGD("        Successfully picked EGL config %d!", i);
             egl->Config = configs[i];
             break;
         }
     }
     if (egl->Config == 0) {
-        ALOGE("        eglChooseConfig() failed: %s", EglErrorString(eglGetError()));
+        ALOGE("        Failed to pick EGL config!");
         return;
     }
     EGLint contextAttribs[] = {EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE};
@@ -2671,35 +2694,20 @@ void android_main(struct android_app* app) {
 
     // Log available layers.
     {
-        XrResult result;
-
-        PFN_xrEnumerateApiLayerProperties xrEnumerateApiLayerProperties;
-        OXR(result = xrGetInstanceProcAddr(
-                XR_NULL_HANDLE,
-                "xrEnumerateApiLayerProperties",
-                (PFN_xrVoidFunction*)&xrEnumerateApiLayerProperties));
-        if (result != XR_SUCCESS) {
-            ALOGE("Failed to get xrEnumerateApiLayerProperties function pointer.");
-            exit(1);
-        }
-
-        uint32_t numInputLayers = 0;
-        uint32_t numOutputLayers = 0;
-        OXR(xrEnumerateApiLayerProperties(numInputLayers, &numOutputLayers, NULL));
-
-        numInputLayers = numOutputLayers;
+        uint32_t numLayers = 0;
+        OXR(xrEnumerateApiLayerProperties(0, &numLayers, NULL));
 
         XrApiLayerProperties* layerProperties =
-            (XrApiLayerProperties*)malloc(numOutputLayers * sizeof(XrApiLayerProperties));
+            (XrApiLayerProperties*)malloc(numLayers * sizeof(XrApiLayerProperties));
 
-        for (uint32_t i = 0; i < numOutputLayers; i++) {
+        for (uint32_t i = 0; i < numLayers; i++) {
             layerProperties[i].type = XR_TYPE_API_LAYER_PROPERTIES;
             layerProperties[i].next = NULL;
         }
 
-        OXR(xrEnumerateApiLayerProperties(numInputLayers, &numOutputLayers, layerProperties));
+        OXR(xrEnumerateApiLayerProperties(numLayers, &numLayers, layerProperties));
 
-        for (uint32_t i = 0; i < numOutputLayers; i++) {
+        for (uint32_t i = 0; i < numLayers; i++) {
             ALOGV("Found layer %s", layerProperties[i].layerName);
         }
 
@@ -2725,42 +2733,28 @@ void android_main(struct android_app* app) {
 
     // Check the list of required extensions against what is supported by the runtime.
     {
-        XrResult result;
-        PFN_xrEnumerateInstanceExtensionProperties xrEnumerateInstanceExtensionProperties;
-        OXR(result = xrGetInstanceProcAddr(
-                XR_NULL_HANDLE,
-                "xrEnumerateInstanceExtensionProperties",
-                (PFN_xrVoidFunction*)&xrEnumerateInstanceExtensionProperties));
-        if (result != XR_SUCCESS) {
-            ALOGE("Failed to get xrEnumerateInstanceExtensionProperties function pointer.");
-            exit(1);
-        }
-
-        uint32_t numInputExtensions = 0;
-        uint32_t numOutputExtensions = 0;
+        uint32_t numExtensions = 0;
         OXR(xrEnumerateInstanceExtensionProperties(
-            NULL, numInputExtensions, &numOutputExtensions, NULL));
-        ALOGV("xrEnumerateInstanceExtensionProperties found %u extension(s).", numOutputExtensions);
-
-        numInputExtensions = numOutputExtensions;
+            NULL, 0, &numExtensions, NULL));
+        ALOGV("xrEnumerateInstanceExtensionProperties found %u extension(s).", numExtensions);
 
         XrExtensionProperties* extensionProperties =
-            (XrExtensionProperties*)malloc(numOutputExtensions * sizeof(XrExtensionProperties));
+            (XrExtensionProperties*)malloc(numExtensions * sizeof(XrExtensionProperties));
 
-        for (uint32_t i = 0; i < numOutputExtensions; i++) {
+        for (uint32_t i = 0; i < numExtensions; i++) {
             extensionProperties[i].type = XR_TYPE_EXTENSION_PROPERTIES;
             extensionProperties[i].next = NULL;
         }
 
         OXR(xrEnumerateInstanceExtensionProperties(
-            NULL, numInputExtensions, &numOutputExtensions, extensionProperties));
-        for (uint32_t i = 0; i < numOutputExtensions; i++) {
+            NULL, numExtensions, &numExtensions, extensionProperties));
+        for (uint32_t i = 0; i < numExtensions; i++) {
             ALOGV("Extension #%d = '%s'.", i, extensionProperties[i].extensionName);
         }
 
         for (uint32_t i = 0; i < numRequiredExtensions; i++) {
             bool found = false;
-            for (uint32_t j = 0; j < numOutputExtensions; j++) {
+            for (uint32_t j = 0; j < numExtensions; j++) {
                 if (!strcmp(requiredExtensionNames[i], extensionProperties[j].extensionName)) {
                     ALOGV("Found required extension %s", requiredExtensionNames[i]);
                     found = true;
