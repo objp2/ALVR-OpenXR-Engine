@@ -4,7 +4,7 @@
 <?xml-model href="registry.sch" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
 <registry>
     <comment>
-Copyright (c) 2017-2023, The Khronos Group Inc.
+Copyright (c) 2017-2024, The Khronos Group Inc.
 
 SPDX-License-Identifier: Apache-2.0 OR MIT
 
@@ -31,12 +31,13 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         <tag name="ACER"       author="Acer"                  contact="OC Lin @aceroc"/>
         <tag name="ALMALENCE"  author="Almalence"             contact="Ivan Chupakhin @ivan.chupakhin, Dmitry Shmunk @dmitry.shmunk"/>
         <tag name="ANDROID"    author="Google"                contact="Nihav Jain @njain_google"/>
+        <tag name="ANDROIDSYS" author="Google"                contact="Nihav Jain @njain_google"/>
         <tag name="ARM"        author="Arm Limited"           contact="Andreas Loeve Selvik @selvik, Sam Martin @sammartin"/>
         <tag name="BD"         author="Bytedance"             contact="Will Fu @willfu, Bangsen Han @Hansenn"/>
-        <tag name="COLLABORA"  author="Collabora"             contact="Ryan Pavlik @rpavlik"/>
+        <tag name="COLLABORA"  author="Collabora"             contact="Rylie Pavlik @rpavlik"/>
         <tag name="DANWILLM"   author="Daniel Willmott"       contact="Daniel Willmott @danwillm"/>
         <tag name="EPIC"       author="Epic"                  contact="Nick Whiting @whitingn"/>
-        <tag name="EXT"        author="Multivendor"           contact="Ryan Pavlik @rpavlik"/>
+        <tag name="EXT"        author="Multivendor"           contact="Rylie Pavlik @rpavlik"/>
         <tag name="FB"         author="Facebook"              contact="Cass Everitt @casseveritt, Jonathan Wright @Nelno"/>
         <tag name="FREDEMMOTT" author="Frederick Emmott"      contact="Frederick Emmott @fredemmott"/>
         <tag name="GOOGLE"     author="Google"                contact="Kaye Mason @chaleur"/>
@@ -44,12 +45,13 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         <tag name="HUAWEI"     author="Huawei"                contact="Yihong Huang @rachelhuang, Li jingya @yzljy"/>
         <tag name="INTEL"      author="Intel"                 contact="Javier Martinez @javier"/>
         <tag name="KHR"        author="Khronos"               contact="Brent Insko @insko"/>
+        <tag name="LEIA"       author="Leia"                  contact="Cristina Scheibler @cscheibler"/>
         <tag name="LUNARG"     author="LunarG"                contact="Brad Grantham @bradgrantham-lunarg"/>
         <tag name="LIV"        author="LIV"                   contact="Arthur Brainville @Ybalrid, Steffan Donal @liv_ruu"/>
         <tag name="LOGITECH"   author="Logitech"              contact="Fabien Zellweger @fzellweger"/>
         <tag name="META"       author="Meta Platforms"        contact="Cass Everitt @casseveritt, Jonathan Wright @Nelno"/>
         <tag name="ML"         author="Magic Leap"            contact="Ron Bessems @rbessems"/>
-        <tag name="MND"        author="Monado Project"        contact="Jakob Bornecrantz @wallbraker, Ryan Pavlik @rpavlik"/>
+        <tag name="MND"        author="Monado Project"        contact="Jakob Bornecrantz @wallbraker, Rylie Pavlik @rpavlik"/>
         <tag name="MSFT"       author="Microsoft"             contact="Alex Turner @alexturn, Yin Li @yl_msft, Bryce Hutchings @brycehutchings, Lachlan Ford @laford_msft, Minmin Gong @gongminmin "/>
         <tag name="NV"         author="NVIDIA Corporation"    contact="Satish Salian @ssalian, Robert Menzel"/>
         <tag name="OCULUS"     author="Oculus"                contact="Cass Everitt @casseveritt, Jonathan Wright @Nelno"/>
@@ -61,7 +63,7 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         <tag name="ULTRALEAP"  author="Ultraleap"             contact="Robert Blenkinsopp @rblenkinsopp"/>
         <tag name="UNITY"      author="Unity Technologies"    contact="Jack Pritz @jackpritz, Peter Kuhn @peterunity"/>
         <tag name="VALVE"      author="Valve"                 contact="Joe Ludwig @JoeLudwig"/>
-        <tag name="VARJO"      author="Varjo"                 contact="Sergiy Dubovik @dubik, Rémi Arnaud @VarjoRemi"/>
+        <tag name="VARJO"      author="Varjo"                 contact="Denny Rönngren @denron_varjo"/>
         <tag name="YVR"        author="YVR"                   contact="Pengpeng Zhang @zhangpengpeng"/>
     </tags>
 
@@ -131,7 +133,7 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         updates them automatically by processing a line at a time.
         -->
         <type category="define">// OpenXR current version number.
-#define <name>XR_CURRENT_API_VERSION</name> <type>XR_MAKE_VERSION</type>(1, 0, 32)</type>
+#define <name>XR_CURRENT_API_VERSION</name> <type>XR_MAKE_VERSION</type>(1, 0, 34)</type>
 
         <!--
         NOTE: For avoidance of ambiguity, there should only be 1 <name> tag immediately in
@@ -212,6 +214,24 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
 
         <type category="define">
 #define <name>XR_MIN_COMPOSITION_LAYERS_SUPPORTED</name> 16</type>
+
+        <!-- openxr_loader_negotiation.h -->
+        <type category="define">
+#define <name>XR_CURRENT_LOADER_API_LAYER_VERSION</name> 1</type>
+        <type category="define">
+#define <name>XR_CURRENT_LOADER_RUNTIME_VERSION</name> 1</type>
+        <type category="define">
+#define <name>XR_LOADER_INFO_STRUCT_VERSION</name> 1</type>
+        <type category="define">
+#define <name>XR_API_LAYER_INFO_STRUCT_VERSION</name> 1</type>
+        <type category="define">
+#define <name>XR_RUNTIME_INFO_STRUCT_VERSION</name> 1</type>
+        <type category="define">
+#define <name>XR_API_LAYER_NEXT_INFO_STRUCT_VERSION</name> 1</type>
+        <type category="define">
+#define <name>XR_API_LAYER_CREATE_INFO_STRUCT_VERSION</name> 1</type>
+        <type category="define">
+#define <name>XR_API_LAYER_MAX_SETTINGS_PATH_SIZE</name> 512</type>
 
         <!-- XR_EXT_hand_tracking -->
         <type category="define">
@@ -417,6 +437,9 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         <!-- XR_FB_face_tracking -->
         <type category="handle" parent="XrSession"><type>XR_DEFINE_HANDLE</type>(<name>XrFaceTrackerFB</name>)</type>
 
+        <!-- XR_FB_face_tracking2 -->
+        <type category="handle" parent="XrSession"><type>XR_DEFINE_HANDLE</type>(<name>XrFaceTracker2FB</name>)</type>
+
         <!-- XR_FB_body_tracking -->
         <type category="handle" parent="XrSession"><type>XR_DEFINE_HANDLE</type>(<name>XrBodyTrackerFB</name>)</type>
 
@@ -442,6 +465,7 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         <type category="handle" parent="XrSession"><type>XR_DEFINE_HANDLE</type>(<name>XrMarkerDetectorML</name>)</type>
 
         <!-- enums and flag bits generated from corresponding <enums> tags below -->
+        <type name="XrLoaderInterfaceStructs" category="enum"/>
         <type name="XrStructureType" category="enum"/>
         <type name="XrResult" category="enum"/>
         <type name="XrObjectType" category="enum"/>
@@ -582,6 +606,12 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         <type name="XrFaceExpressionSetFB" category="enum"/>
         <type name="XrFaceConfidenceFB" category="enum"/>
 
+        <!-- enums for XR_FB_face_tracking2 -->
+        <type name="XrFaceExpression2FB" category="enum"/>
+        <type name="XrFaceExpressionSet2FB" category="enum"/>
+        <type name="XrFaceTrackingDataSource2FB" category="enum"/>
+        <type name="XrFaceConfidence2FB" category="enum"/>
+
         <!-- enums for XR_FB_body_tracking -->
         <type name="XrBodyJointFB" category="enum"/>
         <type name="XrBodyJointSetFB" category="enum"/>
@@ -695,6 +725,52 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         <type category="struct" name="XrRect2Di">
             <member><type>XrOffset2Di</type>          <name>offset</name></member>
             <member><type>XrExtent2Di</type>          <name>extent</name></member>
+        </type>
+
+        <!-- openxr_loader_negotiation.h -->
+        <type category="struct" name="XrNegotiateLoaderInfo">
+            <member><type>XrLoaderInterfaceStructs</type> <name>structType</name></member>
+            <member><type>uint32_t</type>                 <name>structVersion</name></member>
+            <member><type>size_t</type>                   <name>structSize</name></member>
+            <member><type>uint32_t</type>                 <name>minInterfaceVersion</name></member>
+            <member><type>uint32_t</type>                 <name>maxInterfaceVersion</name></member>
+            <member><type>XrVersion</type>                <name>minApiVersion</name></member>
+            <member><type>XrVersion</type>                <name>maxApiVersion</name></member>
+        </type>
+        <type category="struct" name="XrNegotiateApiLayerRequest">
+            <member><type>XrLoaderInterfaceStructs</type>     <name>structType</name></member>
+            <member><type>uint32_t</type>                     <name>structVersion</name></member>
+            <member><type>size_t</type>                       <name>structSize</name></member>
+            <member><type>uint32_t</type>                     <name>layerInterfaceVersion</name></member>
+            <member><type>XrVersion</type>                    <name>layerApiVersion</name></member>
+            <member><type>PFN_xrGetInstanceProcAddr</type>    <name>getInstanceProcAddr</name></member>
+            <member><type>PFN_xrCreateApiLayerInstance</type> <name>createApiLayerInstance</name></member>
+        </type>
+        <type category="struct" name="XrNegotiateRuntimeRequest">
+            <member><type>XrLoaderInterfaceStructs</type>  <name>structType</name></member>
+            <member><type>uint32_t</type>                  <name>structVersion</name></member>
+            <member><type>size_t</type>                    <name>structSize</name></member>
+            <member><type>uint32_t</type>                  <name>runtimeInterfaceVersion</name></member>
+            <member><type>XrVersion</type>                 <name>runtimeApiVersion</name></member>
+            <member><type>PFN_xrGetInstanceProcAddr</type> <name>getInstanceProcAddr</name></member>
+        </type>
+
+        <type category="struct" name="XrApiLayerNextInfo">
+            <member><type>XrLoaderInterfaceStructs</type>     <name>structType</name></member>
+            <member><type>uint32_t</type>                     <name>structVersion</name></member>
+            <member><type>size_t</type>                       <name>structSize</name></member>
+            <member><type>char</type>                         <name>layerName</name>[<enum>XR_MAX_API_LAYER_NAME_SIZE</enum>]</member>
+            <member><type>PFN_xrGetInstanceProcAddr</type>    <name>nextGetInstanceProcAddr</name></member>
+            <member><type>PFN_xrCreateApiLayerInstance</type> <name>nextCreateApiLayerInstance</name></member>
+            <member>struct <type>XrApiLayerNextInfo</type>*   <name>next</name></member>
+        </type>
+        <type category="struct" name="XrApiLayerCreateInfo">
+            <member><type>XrLoaderInterfaceStructs</type>     <name>structType</name></member>
+            <member><type>uint32_t</type>                     <name>structVersion</name></member>
+            <member><type>size_t</type>                       <name>structSize</name></member>
+            <member><type>void</type>*                        <name>loaderInstance</name></member>
+            <member><type>char</type>                         <name>settings_file_location</name>[XR_API_LAYER_MAX_SETTINGS_PATH_SIZE]</member>
+            <member><type>XrApiLayerNextInfo</type>*          <name>nextInfo</name></member>
         </type>
 
         <comment>
@@ -1448,8 +1524,22 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
             <member>const <type>void</type>*     <name>next</name></member>
         </type>
 
-        <!-- The PFN_xrVoidFunction type are used by XrGetInstanceProcAddr below -->
+        <!-- The PFN_xrVoidFunction type is used by xrGetInstanceProcAddr below -->
         <type category="funcpointer">typedef void (XRAPI_PTR *<name>PFN_xrVoidFunction</name>)(void);</type>
+
+        <!-- The PFN_xrGetInstanceProcAddr type is used by XrNegotiateRuntimeRequest below -->
+        <type category="funcpointer">typedef XrResult (XRAPI_PTR *<name>PFN_xrGetInstanceProcAddr</name>)(XrInstance instance, const char* name, PFN_xrVoidFunction* function);</type>
+
+        <!-- openxr_loader_negotiation.h -->
+        <!-- Function pointer prototype for the xrCreateApiLayerInstance function used in place of xrCreateInstance. -->
+        <!-- This function allows us to pass special API layer information to each layer during the process of creating an Instance. -->
+        <!-- The typedef is embedded to work around circular dependency between XrApiLayerCreateInfo, next and PFN_xrCreateApiLayerInstance -->
+        <type category="funcpointer">
+typedef struct XrApiLayerCreateInfo XrApiLayerCreateInfo;
+typedef XrResult (XRAPI_PTR *<name>PFN_xrCreateApiLayerInstance</name>)(
+            const XrInstanceCreateInfo* info,
+            const XrApiLayerCreateInfo* apiLayerInfo,
+            XrInstance* instance);</type>
 
         <!-- The PFN_xrDebugUtilsMessengerCallbackEXT type are used by the XR_EXT_debug_utils extension -->
         <type category="funcpointer" requires="XrDebugUtilsMessengerCallbackDataEXT">typedef XrBool32 (XRAPI_PTR *<name>PFN_xrDebugUtilsMessengerCallbackEXT</name>)(
@@ -1618,6 +1708,38 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
             <member><type>uint32_t</type>                     <name>confidenceCount</name></member>
             <member len="confidenceCount"><type>float</type>* <name>confidences</name></member>
             <member><type>XrFaceExpressionStatusFB</type>     <name>status</name></member>
+            <member><type>XrTime</type>                       <name>time</name></member>
+        </type>
+
+        <!-- XR_FB_face_tracking2 structs -->
+        <type category="struct" name="XrSystemFaceTrackingProperties2FB" returnedonly="true" structextends="XrSystemProperties">
+            <member values="XR_TYPE_SYSTEM_FACE_TRACKING_PROPERTIES2_FB"><type>XrStructureType</type> <name>type</name></member>
+            <member><type>void</type>*    <name>next</name></member>
+            <member><type>XrBool32</type> <name>supportsVisualFaceTracking</name></member>
+            <member><type>XrBool32</type> <name>supportsAudioFaceTracking</name></member>
+        </type>
+        <type category="struct" name="XrFaceTrackerCreateInfo2FB">
+            <member values="XR_TYPE_FACE_TRACKER_CREATE_INFO2_FB"><type>XrStructureType</type> <name>type</name></member>
+            <member>const <type>void</type>*                                                                 <name>next</name></member>
+            <member><type>XrFaceExpressionSet2FB</type>                                                      <name>faceExpressionSet</name></member>
+            <member optional="true"><type>uint32_t</type>                                                    <name>requestedDataSourceCount</name></member>
+            <member optional="true" len="requestedDataSourceCount"><type>XrFaceTrackingDataSource2FB</type>* <name>requestedDataSources</name></member>
+        </type>
+        <type category="struct" name="XrFaceExpressionInfo2FB">
+            <member values="XR_TYPE_FACE_EXPRESSION_INFO2_FB"><type>XrStructureType</type> <name>type</name></member>
+            <member>const <type>void</type>*  <name>next</name></member>
+            <member><type>XrTime</type> <name>time</name></member>
+        </type>
+        <type category="struct" name="XrFaceExpressionWeights2FB">
+            <member values="XR_TYPE_FACE_EXPRESSION_WEIGHTS2_FB"><type>XrStructureType</type> <name>type</name></member>
+            <member><type>void</type>*                        <name>next</name></member>
+            <member><type>uint32_t</type>                     <name>weightCount</name></member>
+            <member len="weightCount"><type>float</type>*     <name>weights</name></member>
+            <member><type>uint32_t</type>                     <name>confidenceCount</name></member>
+            <member len="confidenceCount"><type>float</type>* <name>confidences</name></member>
+            <member><type>XrBool32</type>                     <name>isValid</name></member>
+            <member><type>XrBool32</type>                     <name>isEyeFollowingBlendshapesValid</name></member>
+            <member><type>XrFaceTrackingDataSource2FB</type>  <name>dataSource</name></member>
             <member><type>XrTime</type>                       <name>time</name></member>
         </type>
 
@@ -2501,6 +2623,23 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
             <member optional="true"><type>uint32_t</type>                            <name>uuidCapacityInput</name></member>
             <member optional="true"><type>uint32_t</type>                            <name>uuidCountOutput</name></member>
             <member optional="true" len="uuidCapacityInput"><type>XrUuidEXT</type>*  <name>uuids</name></member>
+        </type>
+
+        <!-- XR_META_spatial_entity_mesh structs -->
+        <type category="struct" name="XrSpaceTriangleMeshGetInfoMETA">
+            <member values="XR_TYPE_SPACE_TRIANGLE_MESH_GET_INFO_META"><type>XrStructureType</type> <name>type</name></member>
+            <member>const <type>void</type>* <name>next</name></member>
+        </type>
+
+        <type category="struct" name="XrSpaceTriangleMeshMETA" returnedonly="true">
+            <member values="XR_TYPE_SPACE_TRIANGLE_MESH_META"><type>XrStructureType</type> <name>type</name></member>
+            <member><type>void</type>*                                                 <name>next</name></member>
+            <member optional="true"><type>uint32_t</type>                              <name>vertexCapacityInput</name></member>
+            <member optional="true"><type>uint32_t</type>                              <name>vertexCountOutput</name></member>
+            <member optional="true" len="vertexCapacityInput"><type>XrVector3f</type>* <name>vertices</name></member>
+            <member optional="true"><type>uint32_t</type>                              <name>indexCapacityInput</name></member>
+            <member optional="true"><type>uint32_t</type>                              <name>indexCountOutput</name></member>
+            <member optional="true" len="indexCapacityInput"><type>uint32_t</type>*    <name>indices</name></member>
         </type>
 
         <!-- XR_FB_scene structs -->
@@ -3414,6 +3553,35 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
             <member><type>XrPosef</type>            <name>poseInMarkerSpace</name></member>
         </type>
 
+        <!-- XR_META_recommended_layer_resolution types -->
+        <type category="struct" name="XrRecommendedLayerResolutionMETA" returnedonly="true">
+            <member values="XR_TYPE_RECOMMENDED_LAYER_RESOLUTION_META"><type>XrStructureType</type> <name>type</name></member>
+            <member><type>void</type>*       <name>next</name></member>
+            <member><type>XrExtent2Di</type> <name>recommendedImageDimensions</name></member>
+            <member><type>XrBool32</type>    <name>isValid</name></member>
+        </type>
+
+        <type category="struct" name="XrRecommendedLayerResolutionGetInfoMETA">
+            <member values="XR_TYPE_RECOMMENDED_LAYER_RESOLUTION_GET_INFO_META"><type>XrStructureType</type> <name>type</name></member>
+            <member>const <type>void</type>*                         <name>next</name></member>
+            <member>const <type>XrCompositionLayerBaseHeader</type>* <name>layer</name></member>
+            <member><type>XrTime</type>                              <name>predictedDisplayTime</name></member>
+        </type>
+
+        <!-- XR_EXT_user_presence -->
+        <type category="struct" name="XrSystemUserPresencePropertiesEXT" returnedonly="true" structextends="XrSystemProperties">
+            <member values="XR_TYPE_SYSTEM_USER_PRESENCE_PROPERTIES_EXT"><type>XrStructureType</type> <name>type</name></member>
+            <member><type>void</type>*    <name>next</name></member>
+            <member><type>XrBool32</type> <name>supportsUserPresence</name></member>
+        </type>
+
+        <type category="struct" name="XrEventDataUserPresenceChangedEXT">
+            <member values="XR_TYPE_EVENT_DATA_USER_PRESENCE_CHANGED_EXT"><type>XrStructureType</type> <name>type</name></member>
+            <member>const <type>void</type>* <name>next</name></member>
+            <member><type>XrSession</type>   <name>session</name></member>
+            <member><type>XrBool32</type>    <name>isUserPresent</name></member>
+        </type>
+
     </types>
 
 
@@ -3777,6 +3945,94 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         <enum value="2"   name="XR_FACE_CONFIDENCE_COUNT_FB"/>
     </enums>
 
+    <!-- XR_FB_face_tracking2 -->
+    <enums name="XrFaceExpression2FB" type="enum">
+        <enum value="0"    name="XR_FACE_EXPRESSION2_BROW_LOWERER_L_FB"/>
+        <enum value="1"    name="XR_FACE_EXPRESSION2_BROW_LOWERER_R_FB"/>
+        <enum value="2"    name="XR_FACE_EXPRESSION2_CHEEK_PUFF_L_FB"/>
+        <enum value="3"    name="XR_FACE_EXPRESSION2_CHEEK_PUFF_R_FB"/>
+        <enum value="4"    name="XR_FACE_EXPRESSION2_CHEEK_RAISER_L_FB"/>
+        <enum value="5"    name="XR_FACE_EXPRESSION2_CHEEK_RAISER_R_FB"/>
+        <enum value="6"    name="XR_FACE_EXPRESSION2_CHEEK_SUCK_L_FB"/>
+        <enum value="7"    name="XR_FACE_EXPRESSION2_CHEEK_SUCK_R_FB"/>
+        <enum value="8"    name="XR_FACE_EXPRESSION2_CHIN_RAISER_B_FB"/>
+        <enum value="9"    name="XR_FACE_EXPRESSION2_CHIN_RAISER_T_FB"/>
+        <enum value="10"   name="XR_FACE_EXPRESSION2_DIMPLER_L_FB"/>
+        <enum value="11"   name="XR_FACE_EXPRESSION2_DIMPLER_R_FB"/>
+        <enum value="12"   name="XR_FACE_EXPRESSION2_EYES_CLOSED_L_FB"/>
+        <enum value="13"   name="XR_FACE_EXPRESSION2_EYES_CLOSED_R_FB"/>
+        <enum value="14"   name="XR_FACE_EXPRESSION2_EYES_LOOK_DOWN_L_FB"/>
+        <enum value="15"   name="XR_FACE_EXPRESSION2_EYES_LOOK_DOWN_R_FB"/>
+        <enum value="16"   name="XR_FACE_EXPRESSION2_EYES_LOOK_LEFT_L_FB"/>
+        <enum value="17"   name="XR_FACE_EXPRESSION2_EYES_LOOK_LEFT_R_FB"/>
+        <enum value="18"   name="XR_FACE_EXPRESSION2_EYES_LOOK_RIGHT_L_FB"/>
+        <enum value="19"   name="XR_FACE_EXPRESSION2_EYES_LOOK_RIGHT_R_FB"/>
+        <enum value="20"   name="XR_FACE_EXPRESSION2_EYES_LOOK_UP_L_FB"/>
+        <enum value="21"   name="XR_FACE_EXPRESSION2_EYES_LOOK_UP_R_FB"/>
+        <enum value="22"   name="XR_FACE_EXPRESSION2_INNER_BROW_RAISER_L_FB"/>
+        <enum value="23"   name="XR_FACE_EXPRESSION2_INNER_BROW_RAISER_R_FB"/>
+        <enum value="24"   name="XR_FACE_EXPRESSION2_JAW_DROP_FB"/>
+        <enum value="25"   name="XR_FACE_EXPRESSION2_JAW_SIDEWAYS_LEFT_FB"/>
+        <enum value="26"   name="XR_FACE_EXPRESSION2_JAW_SIDEWAYS_RIGHT_FB"/>
+        <enum value="27"   name="XR_FACE_EXPRESSION2_JAW_THRUST_FB"/>
+        <enum value="28"   name="XR_FACE_EXPRESSION2_LID_TIGHTENER_L_FB"/>
+        <enum value="29"   name="XR_FACE_EXPRESSION2_LID_TIGHTENER_R_FB"/>
+        <enum value="30"   name="XR_FACE_EXPRESSION2_LIP_CORNER_DEPRESSOR_L_FB"/>
+        <enum value="31"   name="XR_FACE_EXPRESSION2_LIP_CORNER_DEPRESSOR_R_FB"/>
+        <enum value="32"   name="XR_FACE_EXPRESSION2_LIP_CORNER_PULLER_L_FB"/>
+        <enum value="33"   name="XR_FACE_EXPRESSION2_LIP_CORNER_PULLER_R_FB"/>
+        <enum value="34"   name="XR_FACE_EXPRESSION2_LIP_FUNNELER_LB_FB"/>
+        <enum value="35"   name="XR_FACE_EXPRESSION2_LIP_FUNNELER_LT_FB"/>
+        <enum value="36"   name="XR_FACE_EXPRESSION2_LIP_FUNNELER_RB_FB"/>
+        <enum value="37"   name="XR_FACE_EXPRESSION2_LIP_FUNNELER_RT_FB"/>
+        <enum value="38"   name="XR_FACE_EXPRESSION2_LIP_PRESSOR_L_FB"/>
+        <enum value="39"   name="XR_FACE_EXPRESSION2_LIP_PRESSOR_R_FB"/>
+        <enum value="40"   name="XR_FACE_EXPRESSION2_LIP_PUCKER_L_FB"/>
+        <enum value="41"   name="XR_FACE_EXPRESSION2_LIP_PUCKER_R_FB"/>
+        <enum value="42"   name="XR_FACE_EXPRESSION2_LIP_STRETCHER_L_FB"/>
+        <enum value="43"   name="XR_FACE_EXPRESSION2_LIP_STRETCHER_R_FB"/>
+        <enum value="44"   name="XR_FACE_EXPRESSION2_LIP_SUCK_LB_FB"/>
+        <enum value="45"   name="XR_FACE_EXPRESSION2_LIP_SUCK_LT_FB"/>
+        <enum value="46"   name="XR_FACE_EXPRESSION2_LIP_SUCK_RB_FB"/>
+        <enum value="47"   name="XR_FACE_EXPRESSION2_LIP_SUCK_RT_FB"/>
+        <enum value="48"   name="XR_FACE_EXPRESSION2_LIP_TIGHTENER_L_FB"/>
+        <enum value="49"   name="XR_FACE_EXPRESSION2_LIP_TIGHTENER_R_FB"/>
+        <enum value="50"   name="XR_FACE_EXPRESSION2_LIPS_TOWARD_FB"/>
+        <enum value="51"   name="XR_FACE_EXPRESSION2_LOWER_LIP_DEPRESSOR_L_FB"/>
+        <enum value="52"   name="XR_FACE_EXPRESSION2_LOWER_LIP_DEPRESSOR_R_FB"/>
+        <enum value="53"   name="XR_FACE_EXPRESSION2_MOUTH_LEFT_FB"/>
+        <enum value="54"   name="XR_FACE_EXPRESSION2_MOUTH_RIGHT_FB"/>
+        <enum value="55"   name="XR_FACE_EXPRESSION2_NOSE_WRINKLER_L_FB"/>
+        <enum value="56"   name="XR_FACE_EXPRESSION2_NOSE_WRINKLER_R_FB"/>
+        <enum value="57"   name="XR_FACE_EXPRESSION2_OUTER_BROW_RAISER_L_FB"/>
+        <enum value="58"   name="XR_FACE_EXPRESSION2_OUTER_BROW_RAISER_R_FB"/>
+        <enum value="59"   name="XR_FACE_EXPRESSION2_UPPER_LID_RAISER_L_FB"/>
+        <enum value="60"   name="XR_FACE_EXPRESSION2_UPPER_LID_RAISER_R_FB"/>
+        <enum value="61"   name="XR_FACE_EXPRESSION2_UPPER_LIP_RAISER_L_FB"/>
+        <enum value="62"   name="XR_FACE_EXPRESSION2_UPPER_LIP_RAISER_R_FB"/>
+        <enum value="63"   name="XR_FACE_EXPRESSION2_TONGUE_TIP_INTERDENTAL_FB"/>
+        <enum value="64"   name="XR_FACE_EXPRESSION2_TONGUE_TIP_ALVEOLAR_FB"/>
+        <enum value="65"   name="XR_FACE_EXPRESSION2_TONGUE_FRONT_DORSAL_PALATE_FB"/>
+        <enum value="66"   name="XR_FACE_EXPRESSION2_TONGUE_MID_DORSAL_PALATE_FB"/>
+        <enum value="67"   name="XR_FACE_EXPRESSION2_TONGUE_BACK_DORSAL_VELAR_FB"/>
+        <enum value="68"   name="XR_FACE_EXPRESSION2_TONGUE_OUT_FB"/>
+        <enum value="69"   name="XR_FACE_EXPRESSION2_TONGUE_RETREAT_FB"/>
+        <enum value="70"   name="XR_FACE_EXPRESSION2_COUNT_FB"/>
+    </enums>
+
+    <enums name="XrFaceExpressionSet2FB" type="enum">
+        <enum value="0"   name="XR_FACE_EXPRESSION_SET2_DEFAULT_FB" comment="indicates that the created slink:XrFaceTracker2FB tracks the set of blend shapes described by elink:XrFaceExpression2FB enum, i.e. the flink:xrGetFaceExpressionWeights2FB function returns an array of blend shapes with the count of ename:XR_FACE_EXPRESSION2_COUNT_FB and can: be indexed using elink:XrFaceExpression2FB."/>
+    </enums>
+    <enums name="XrFaceTrackingDataSource2FB" type="enum">
+        <enum value="0"   name="XR_FACE_TRACKING_DATA_SOURCE2_VISUAL_FB" comment="face tracking uses visual data to estimate expressions. Face tracking may use audio to further improve the quality of face tracking."/>
+        <enum value="1"   name="XR_FACE_TRACKING_DATA_SOURCE2_AUDIO_FB"  comment="face tracking uses audio data to estimate expressions."/>
+    </enums>
+    <enums name="XrFaceConfidence2FB" type="enum">
+        <enum value="0"   name="XR_FACE_CONFIDENCE2_LOWER_FACE_FB"/>
+        <enum value="1"   name="XR_FACE_CONFIDENCE2_UPPER_FACE_FB"/>
+        <enum value="2"   name="XR_FACE_CONFIDENCE2_COUNT_FB"/>
+    </enums>
+
     <!-- XR_FB_body_tracking -->
     <enums name="XrBodyJointFB" type="enum">
         <enum value="0"    name="XR_BODY_JOINT_ROOT_FB"/>
@@ -4048,6 +4304,16 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         <enum bitpos="2" name="XR_INPUT_SOURCE_LOCALIZED_NAME_COMPONENT_BIT"           comment="Asks for the part of the string which represents the component on the device which needs to be interacted with"/>
     </enums>
 
+    <!-- openxr_loader_negotiation.h -->
+    <enums name="XrLoaderInterfaceStructs" type="enum">
+        <enum value="0"   name="XR_LOADER_INTERFACE_STRUCT_UNINTIALIZED"/>
+        <enum value="1"   name="XR_LOADER_INTERFACE_STRUCT_LOADER_INFO"/>
+        <enum value="2"   name="XR_LOADER_INTERFACE_STRUCT_API_LAYER_REQUEST"/>
+        <enum value="3"   name="XR_LOADER_INTERFACE_STRUCT_RUNTIME_REQUEST"/>
+        <enum value="4"   name="XR_LOADER_INTERFACE_STRUCT_API_LAYER_CREATE_INFO"/>
+        <enum value="5"   name="XR_LOADER_INTERFACE_STRUCT_API_LAYER_NEXT_INFO"/>
+    </enums>
+
     <!-- flags for XR_EXT_debug_utils -->
     <enums name="XrVulkanInstanceCreateFlagBitsKHR" type="bitmask">
         <!-- This is currently empty, awaiting future flags. -->
@@ -4247,6 +4513,7 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
     <enums name="XrSemanticLabelsSupportFlagBitsFB" type="bitmask">
         <enum bitpos="0" name="XR_SEMANTIC_LABELS_SUPPORT_MULTIPLE_SEMANTIC_LABELS_BIT_FB"       comment="If set, and the runtime reports the pname:extensionVersion as 2 or greater, the runtime may: return multiple semantic labels separated by a comma without spaces. Otherwise, the runtime must: return a single semantic label."/>
         <enum bitpos="1" name="XR_SEMANTIC_LABELS_SUPPORT_ACCEPT_DESK_TO_TABLE_MIGRATION_BIT_FB" comment="If set, and the runtime reports the pname:extensionVersion as 3 or greater, the runtime must: return &quot;TABLE&quot; instead of &quot;DESK&quot; as a semantic label to the application. Otherwise, the runtime must: return &quot;DESK&quot; instead of &quot;TABLE&quot; as a semantic label to the application, when applicable."/>
+        <enum bitpos="2" name="XR_SEMANTIC_LABELS_SUPPORT_ACCEPT_INVISIBLE_WALL_FACE_BIT_FB"     comment="If set, and the runtime reports the pname:extensionVersion as 4 or greater, the runtime may: return &quot;INVISIBLE_WALL_FACE&quot; instead of &quot;WALL_FACE&quot; as a semantic label to the application in order to represent an invisible wall used to conceptually separate a space (e.g., separate a living space from a kitchen space in an open floor plan house even though there is no real wall between the two spaces) instead of a real wall. Otherwise, the runtime must: return &quot;WALL_FACE&quot; as a semantic label to the application in order to represent both an invisible and real wall, when applicable."/>
     </enums>
 
     <!-- enums for XR_META_local_dimming -->
@@ -4585,6 +4852,27 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         <enum bitpos="5" name="XR_LOCALIZATION_MAP_ERROR_HEADPOSE_BIT_ML"           comment="A headpose failure caused localization to be unsuccessful."/>
     </enums>
 
+    <!-- SECTION: OpenXR loader command definitions -->
+    <!-- openxr_loader_negotiation.h -->
+    <commands>
+        <command successcodes="XR_SUCCESS" errorcodes="XR_ERROR_INITIALIZATION_FAILED">
+            <proto><type>XrResult</type> <name>xrNegotiateLoaderRuntimeInterface</name></proto>
+            <param>const <type>XrNegotiateLoaderInfo</type>* <name>loaderInfo</name></param>
+            <param><type>XrNegotiateRuntimeRequest</type>* <name>runtimeRequest</name></param>
+        </command>
+        <command successcodes="XR_SUCCESS" errorcodes="XR_ERROR_INITIALIZATION_FAILED">
+            <proto><type>XrResult</type> <name>xrNegotiateLoaderApiLayerInterface</name></proto>
+            <param>const <type>XrNegotiateLoaderInfo</type>* <name>loaderInfo</name></param>
+            <param len="null-terminated">const <type>char</type>* <name>layerName</name></param>
+            <param><type>XrNegotiateApiLayerRequest</type>* <name>apiLayerRequest</name></param>
+        </command>
+        <command successcodes="XR_SUCCESS" errorcodes="XR_ERROR_INITIALIZATION_FAILED">
+            <proto><type>XrResult</type> <name>xrCreateApiLayerInstance</name></proto>
+            <param>const <type>XrInstanceCreateInfo</type>* <name>info</name></param>
+            <param>const <type>XrApiLayerCreateInfo</type>* <name>layerInfo</name></param>
+            <param><type>XrInstance</type>* <name>instance</name></param>
+        </command>
+    </commands>
 
     <!-- SECTION: OpenXR command definitions -->
     <commands>
@@ -5225,6 +5513,24 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
             <param><type>XrFaceExpressionWeightsFB</type>* <name>expressionWeights</name></param>
         </command>
 
+        <!-- XR_FB_face_tracking2 -->
+        <command successcodes="XR_SUCCESS,XR_SESSION_LOSS_PENDING" errorcodes="XR_ERROR_FUNCTION_UNSUPPORTED,XR_ERROR_VALIDATION_FAILURE,XR_ERROR_RUNTIME_FAILURE,XR_ERROR_HANDLE_INVALID,XR_ERROR_INSTANCE_LOST,XR_ERROR_SESSION_LOST,XR_ERROR_OUT_OF_MEMORY,XR_ERROR_LIMIT_REACHED,XR_ERROR_FEATURE_UNSUPPORTED">
+            <proto><type>XrResult</type> <name>xrCreateFaceTracker2FB</name></proto>
+            <param><type>XrSession</type> <name>session</name></param>
+            <param>const <type>XrFaceTrackerCreateInfo2FB</type>* <name>createInfo</name></param>
+            <param><type>XrFaceTracker2FB</type>* <name>faceTracker</name></param>
+        </command>
+        <command successcodes="XR_SUCCESS" errorcodes="XR_ERROR_FUNCTION_UNSUPPORTED,XR_ERROR_HANDLE_INVALID">
+            <proto><type>XrResult</type> <name>xrDestroyFaceTracker2FB</name></proto>
+            <param externsync="true_with_children"><type>XrFaceTracker2FB</type> <name>faceTracker</name></param>
+        </command>
+        <command successcodes="XR_SUCCESS,XR_SESSION_LOSS_PENDING" errorcodes="XR_ERROR_FUNCTION_UNSUPPORTED,XR_ERROR_VALIDATION_FAILURE,XR_ERROR_RUNTIME_FAILURE,XR_ERROR_HANDLE_INVALID,XR_ERROR_INSTANCE_LOST,XR_ERROR_SESSION_LOST,XR_ERROR_TIME_INVALID">
+            <proto><type>XrResult</type> <name>xrGetFaceExpressionWeights2FB</name></proto>
+            <param><type>XrFaceTracker2FB</type> <name>faceTracker</name></param>
+            <param>const <type>XrFaceExpressionInfo2FB</type>* <name>expressionInfo</name></param>
+            <param><type>XrFaceExpressionWeights2FB</type>* <name>expressionWeights</name></param>
+        </command>
+
         <!-- XR_FB_body_tracking -->
         <command successcodes="XR_SUCCESS,XR_SESSION_LOSS_PENDING" errorcodes="XR_ERROR_FUNCTION_UNSUPPORTED,XR_ERROR_VALIDATION_FAILURE,XR_ERROR_RUNTIME_FAILURE,XR_ERROR_HANDLE_INVALID,XR_ERROR_INSTANCE_LOST,XR_ERROR_SESSION_LOST,XR_ERROR_OUT_OF_MEMORY,XR_ERROR_LIMIT_REACHED,XR_ERROR_FEATURE_UNSUPPORTED">
             <proto><type>XrResult</type> <name>xrCreateBodyTrackerFB</name></proto>
@@ -5737,6 +6043,14 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
             <param><type>XrSpaceContainerFB</type>* <name>spaceContainerOutput</name></param>
         </command>
 
+        <!-- XR_META_spatial_entity_mesh -->
+        <command successcodes="XR_SUCCESS,XR_SESSION_LOSS_PENDING" errorcodes="XR_ERROR_FUNCTION_UNSUPPORTED,XR_ERROR_VALIDATION_FAILURE,XR_ERROR_RUNTIME_FAILURE,XR_ERROR_HANDLE_INVALID,XR_ERROR_INSTANCE_LOST,XR_ERROR_SESSION_LOST,XR_ERROR_SIZE_INSUFFICIENT,XR_ERROR_SPACE_COMPONENT_NOT_ENABLED_FB,XR_ERROR_FEATURE_UNSUPPORTED">
+            <proto><type>XrResult</type> <name>xrGetSpaceTriangleMeshMETA</name></proto>
+            <param><type>XrSpace</type> <name>space</name></param>
+            <param>const <type>XrSpaceTriangleMeshGetInfoMETA</type>* <name>getInfo</name></param>
+            <param><type>XrSpaceTriangleMeshMETA</type>* <name>triangleMeshOutput</name></param>
+        </command>
+
         <!-- XR_FB_scene -->
         <command successcodes="XR_SUCCESS,XR_SESSION_LOSS_PENDING" errorcodes="XR_ERROR_FUNCTION_UNSUPPORTED,XR_ERROR_VALIDATION_FAILURE,XR_ERROR_RUNTIME_FAILURE,XR_ERROR_HANDLE_INVALID,XR_ERROR_INSTANCE_LOST,XR_ERROR_SESSION_LOST,XR_ERROR_SPACE_COMPONENT_NOT_ENABLED_FB,XR_ERROR_FEATURE_UNSUPPORTED">
             <proto><type>XrResult</type> <name>xrGetSpaceBoundingBox2DFB</name></proto>
@@ -6032,6 +6346,14 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         <command successcodes="XR_SUCCESS" errorcodes="XR_ERROR_FUNCTION_UNSUPPORTED,XR_ERROR_RUNTIME_FAILURE,XR_ERROR_HANDLE_INVALID">
             <proto><type>XrResult</type> <name>xrDestroySpaceUserFB</name></proto>
             <param externsync="true_with_children"><type>XrSpaceUserFB</type> <name>user</name></param>
+        </command>
+
+        <!-- XR_META_recommended_layer_resolution commands -->
+        <command successcodes="XR_SUCCESS,XR_SESSION_LOSS_PENDING" errorcodes="XR_ERROR_FUNCTION_UNSUPPORTED,XR_ERROR_VALIDATION_FAILURE,XR_ERROR_RUNTIME_FAILURE,XR_ERROR_HANDLE_INVALID,XR_ERROR_INSTANCE_LOST,XR_ERROR_SESSION_LOST,XR_ERROR_TIME_INVALID,XR_ERROR_POSE_INVALID,XR_ERROR_LAYER_INVALID">
+            <proto><type>XrResult</type> <name>xrGetRecommendedLayerResolutionMETA</name></proto>
+            <param><type>XrSession</type> <name>session</name></param>
+            <param>const <type>XrRecommendedLayerResolutionGetInfoMETA</type>* <name>info</name></param>
+            <param><type>XrRecommendedLayerResolutionMETA</type>* <name>resolution</name></param>
         </command>
 
         <!-- commands for XR_MNDX_force_feedback_curl -->
@@ -7053,12 +7375,30 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         </require>
     </feature>
 
+    <!-- SECTION: OpenXR Loader API interface definitions -->
+    <feature api="openxr" name="XR_LOADER_VERSION_1_0" number="1.0">
+        <require comment="Negotiate">
+            <type    name="XR_CURRENT_LOADER_API_LAYER_VERSION"/>
+            <type    name="XR_CURRENT_LOADER_RUNTIME_VERSION"/>
+            <type    name="XR_LOADER_INFO_STRUCT_VERSION"/>
+            <type    name="XR_API_LAYER_INFO_STRUCT_VERSION"/>
+            <type    name="XR_RUNTIME_INFO_STRUCT_VERSION"/>
+            <type    name="XR_API_LAYER_NEXT_INFO_STRUCT_VERSION"/>
+            <type    name="XR_API_LAYER_CREATE_INFO_STRUCT_VERSION"/>
+            <type    name="XR_API_LAYER_MAX_SETTINGS_PATH_SIZE"/>
+
+            <command name="xrCreateApiLayerInstance"/>
+            <command name="xrNegotiateLoaderRuntimeInterface"/>
+            <command name="xrNegotiateLoaderApiLayerInterface"/>
+        </require>
+    </feature>
+
     <!-- SECTION: OpenXR extension interface definitions -->
     <extensions>
     <!-- Android Thread Settings extension -->
     <extension name="XR_KHR_android_thread_settings" number="4" type="instance" supported="openxr" protect="XR_USE_PLATFORM_ANDROID">
         <require>
-            <enum value="5"                                          name="XR_KHR_android_thread_settings_SPEC_VERSION"/>
+            <enum value="6"                                          name="XR_KHR_android_thread_settings_SPEC_VERSION"/>
             <enum value="&quot;XR_KHR_android_thread_settings&quot;" name="XR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME"/>
             <enum offset="0" dir="-" extends="XrResult"              name="XR_ERROR_ANDROID_THREAD_SETTINGS_ID_INVALID_KHR" comment="xrSetAndroidApplicationThreadKHR failed as thread id is invalid."/>
             <enum offset="1" dir="-" extends="XrResult"              name="XR_ERROR_ANDROID_THREAD_SETTINGS_FAILURE_KHR"    comment="xrSetAndroidApplicationThreadKHR failed setting the thread attributes/priority."/>
@@ -7491,7 +7831,7 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
 
     <extension name="XR_MNDX_egl_enable" number="49" type="instance" provisional="true" protect="XR_USE_PLATFORM_EGL" supported="openxr">
         <require>
-            <enum value="1"                              name="XR_MNDX_egl_enable_SPEC_VERSION"/>
+            <enum value="2"                              name="XR_MNDX_egl_enable_SPEC_VERSION"/>
             <enum value="&quot;XR_MNDX_egl_enable&quot;" name="XR_MNDX_EGL_ENABLE_EXTENSION_NAME"/>
             <enum offset="4" extends="XrStructureType"   name="XR_TYPE_GRAPHICS_BINDING_EGL_MNDX"/>
             <type name="XrGraphicsBindingEGLMNDX"/>
@@ -7537,8 +7877,6 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
             <extend interaction_profile_path="/interaction_profiles/microsoft/hand_interaction">
                 <component subpath="/input/pinch_ext/pose"   type="XR_ACTION_TYPE_POSE_INPUT"/>
                 <component subpath="/input/poke_ext/pose"    type="XR_ACTION_TYPE_POSE_INPUT"/>
-                <component subpath="/input/grip/pose"        type="XR_ACTION_TYPE_POSE_INPUT"/>
-                <component subpath="/input/aim/pose"         type="XR_ACTION_TYPE_POSE_INPUT"/>
             </extend>
         </require>
     </extension>
@@ -7780,8 +8118,6 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
             <extend interaction_profile_path="/interaction_profiles/huawei/controller">
                 <component subpath="/input/pinch_ext/pose"   type="XR_ACTION_TYPE_POSE_INPUT"/>
                 <component subpath="/input/poke_ext/pose"    type="XR_ACTION_TYPE_POSE_INPUT"/>
-                <component subpath="/input/grip/pose"        type="XR_ACTION_TYPE_POSE_INPUT"/>
-                <component subpath="/input/aim/pose"         type="XR_ACTION_TYPE_POSE_INPUT"/>
             </extend>
         </require>
     </extension>
@@ -8106,8 +8442,6 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
             <extend interaction_profile_path="/interaction_profiles/samsung/odyssey_controller">
                 <component subpath="/input/pinch_ext/pose"   type="XR_ACTION_TYPE_POSE_INPUT"/>
                 <component subpath="/input/poke_ext/pose"    type="XR_ACTION_TYPE_POSE_INPUT"/>
-                <component subpath="/input/grip/pose"        type="XR_ACTION_TYPE_POSE_INPUT"/>
-                <component subpath="/input/aim/pose"         type="XR_ACTION_TYPE_POSE_INPUT"/>
             </extend>
         </require>
     </extension>
@@ -8136,8 +8470,6 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
             <extend interaction_profile_path="/interaction_profiles/hp/mixed_reality_controller">
                 <component subpath="/input/pinch_ext/pose"   type="XR_ACTION_TYPE_POSE_INPUT"/>
                 <component subpath="/input/poke_ext/pose"    type="XR_ACTION_TYPE_POSE_INPUT"/>
-                <component subpath="/input/grip/pose"        type="XR_ACTION_TYPE_POSE_INPUT"/>
-                <component subpath="/input/aim/pose"         type="XR_ACTION_TYPE_POSE_INPUT"/>
             </extend>
         </require>
     </extension>
@@ -8300,8 +8632,6 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
             <extend interaction_profile_path="/interaction_profiles/htc/vive_cosmos_controller">
                 <component subpath="/input/pinch_ext/pose"   type="XR_ACTION_TYPE_POSE_INPUT"/>
                 <component subpath="/input/poke_ext/pose"    type="XR_ACTION_TYPE_POSE_INPUT"/>
-                <component subpath="/input/grip/pose"        type="XR_ACTION_TYPE_POSE_INPUT"/>
-                <component subpath="/input/aim/pose"         type="XR_ACTION_TYPE_POSE_INPUT"/>
             </extend>
         </require>
     </extension>
@@ -8383,8 +8713,6 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
             <extend interaction_profile_path="/interaction_profiles/htc/vive_focus3_controller">
                 <component subpath="/input/pinch_ext/pose"   type="XR_ACTION_TYPE_POSE_INPUT"/>
                 <component subpath="/input/poke_ext/pose"    type="XR_ACTION_TYPE_POSE_INPUT"/>
-                <component subpath="/input/grip/pose"        type="XR_ACTION_TYPE_POSE_INPUT"/>
-                <component subpath="/input/aim/pose"         type="XR_ACTION_TYPE_POSE_INPUT"/>
             </extend>
         </require>
     </extension>
@@ -8404,8 +8732,6 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
             <extend interaction_profile_path="/interaction_profiles/htc/hand_interaction">
                 <component subpath="/input/pinch_ext/pose"   type="XR_ACTION_TYPE_POSE_INPUT"/>
                 <component subpath="/input/poke_ext/pose"    type="XR_ACTION_TYPE_POSE_INPUT"/>
-                <component subpath="/input/grip/pose"        type="XR_ACTION_TYPE_POSE_INPUT"/>
-                <component subpath="/input/aim/pose"         type="XR_ACTION_TYPE_POSE_INPUT"/>
             </extend>
         </require>
     </extension>
@@ -8487,9 +8813,9 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         </require>
     </extension>
 
-    <extension name="XR_FB_spatial_entity" number="114" type="instance" requires="XR_EXT_uuid" supported="openxr">
+    <extension name="XR_FB_spatial_entity" number="114" type="instance" supported="openxr">
         <require>
-            <enum value="2"                                    name="XR_FB_spatial_entity_SPEC_VERSION"/>
+            <enum value="3"                                    name="XR_FB_spatial_entity_SPEC_VERSION"/>
             <enum value="&quot;XR_FB_spatial_entity&quot;"     name="XR_FB_SPATIAL_ENTITY_EXTENSION_NAME"/>
 
             <enum offset="4"         extends="XrStructureType" name="XR_TYPE_SYSTEM_SPATIAL_ENTITY_PROPERTIES_FB"/>
@@ -8789,10 +9115,10 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         </require>
     </extension>
 
-    <extension name="XR_VARJO_extension_130" number="130" type="instance" supported="disabled">
+    <extension name="XR_VARJO_xr4_controller_interaction" number="130" type="instance" supported="openxr">
         <require>
-            <enum value="1"                                  name="XR_VARJO_extension_130_SPEC_VERSION"/>
-            <enum value="&quot;XR_VARJO_extension_130&quot;" name="XR_VARJO_extension_130_EXTENSION_NAME"/>
+            <enum value="1"                                               name="XR_VARJO_xr4_controller_interaction_SPEC_VERSION"/>
+            <enum value="&quot;XR_VARJO_xr4_controller_interaction&quot;" name="XR_VARJO_XR4_CONTROLLER_INTERACTION_EXTENSION_NAME"/>
         </require>
     </extension>
 
@@ -8848,8 +9174,6 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
             <extend interaction_profile_path="/interaction_profiles/ml/ml2_controller">
                 <component subpath="/input/pinch_ext/pose"   type="XR_ACTION_TYPE_POSE_INPUT"/>
                 <component subpath="/input/poke_ext/pose"    type="XR_ACTION_TYPE_POSE_INPUT"/>
-                <component subpath="/input/grip/pose"        type="XR_ACTION_TYPE_POSE_INPUT"/>
-                <component subpath="/input/aim/pose"         type="XR_ACTION_TYPE_POSE_INPUT"/>
             </extend>
         </require>
     </extension>
@@ -9382,7 +9706,7 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
 
     <extension name="XR_FB_scene" number="176" type="instance" requires="XR_FB_spatial_entity" supported="openxr">
         <require>
-            <enum value="3"                             name="XR_FB_scene_SPEC_VERSION"/>
+            <enum value="4"                             name="XR_FB_scene_SPEC_VERSION"/>
             <enum value="&quot;XR_FB_scene&quot;"       name="XR_FB_SCENE_EXTENSION_NAME"/>
 
             <enum offset="0"  extends="XrStructureType" name="XR_TYPE_SEMANTIC_LABELS_FB"/>
@@ -10147,9 +10471,9 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         </require>
     </extension>
 
-    <extension name="XR_META_headset_id" number="246" type="instance" requires="XR_EXT_uuid" supported="openxr">
+    <extension name="XR_META_headset_id" number="246" type="instance" supported="openxr">
         <require>
-            <enum value="1"                              name="XR_META_headset_id_SPEC_VERSION"/>
+            <enum value="2"                              name="XR_META_headset_id_SPEC_VERSION"/>
             <enum value="&quot;XR_META_headset_id&quot;" name="XR_META_HEADSET_ID_EXTENSION_NAME"/>
 
             <type name="XrSystemHeadsetIdPropertiesMETA"/>
@@ -10214,10 +10538,17 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         </require>
     </extension>
 
-    <extension name="XR_FB_extension_255" number="255" type="instance" supported="disabled">
+    <extension name="XR_META_recommended_layer_resolution" number="255" type="instance" supported="openxr">
         <require>
-            <enum value="1"                               name="XR_FB_extension_255_SPEC_VERSION"/>
-            <enum value="&quot;XR_FB_extension_255&quot;" name="XR_FB_EXTENSION_255_EXTENSION_NAME"/>
+            <enum value="1"                                                name="XR_META_recommended_layer_resolution_SPEC_VERSION"/>
+            <enum value="&quot;XR_META_recommended_layer_resolution&quot;" name="XR_META_RECOMMENDED_LAYER_RESOLUTION_EXTENSION_NAME"/>
+            <enum offset="0" extends="XrStructureType"                     name="XR_TYPE_RECOMMENDED_LAYER_RESOLUTION_META"/>
+            <enum offset="1" extends="XrStructureType"                     name="XR_TYPE_RECOMMENDED_LAYER_RESOLUTION_GET_INFO_META"/>
+
+            <type name="XrRecommendedLayerResolutionMETA"/>
+            <type name="XrRecommendedLayerResolutionGetInfoMETA"/>
+
+            <command name="xrGetRecommendedLayerResolutionMETA"/>
         </require>
     </extension>
 
@@ -10340,10 +10671,20 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         </require>
     </extension>
 
-    <extension name="XR_FB_extension_270" number="270" type="instance" supported="disabled">
+    <extension name="XR_META_spatial_entity_mesh" number="270" type="instance" requires="XR_FB_spatial_entity" supported="openxr">
         <require>
-            <enum value="1"                               name="XR_FB_extension_270_SPEC_VERSION"/>
-            <enum value="&quot;XR_FB_extension_270&quot;" name="XR_FB_EXTENSION_270_EXTENSION_NAME"/>
+            <enum value="1"                                       name="XR_META_spatial_entity_mesh_SPEC_VERSION"/>
+            <enum value="&quot;XR_META_spatial_entity_mesh&quot;" name="XR_META_SPATIAL_ENTITY_MESH_EXTENSION_NAME"/>
+
+            <enum offset="0" extends="XrSpaceComponentTypeFB"     name="XR_SPACE_COMPONENT_TYPE_TRIANGLE_MESH_META"/>
+
+            <enum offset="1" extends="XrStructureType"            name="XR_TYPE_SPACE_TRIANGLE_MESH_GET_INFO_META"/>
+            <enum offset="2" extends="XrStructureType"            name="XR_TYPE_SPACE_TRIANGLE_MESH_META"/>
+
+            <type name="XrSpaceTriangleMeshGetInfoMETA"/>
+            <type name="XrSpaceTriangleMeshMETA"/>
+
+            <command name="xrGetSpaceTriangleMeshMETA"/>
         </require>
     </extension>
 
@@ -10354,10 +10695,11 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         </require>
     </extension>
 
-    <extension name="XR_FB_extension_272" number="272" type="instance" supported="disabled">
+    <extension name="XR_META_automatic_layer_filter" number="272" type="instance" requires="XR_FB_composition_layer_settings" supported="openxr">
         <require>
-            <enum value="1"                               name="XR_FB_extension_272_SPEC_VERSION"/>
-            <enum value="&quot;XR_FB_extension_272&quot;" name="XR_FB_EXTENSION_272_EXTENSION_NAME"/>
+            <enum value="1"                                                 name="XR_META_automatic_layer_filter_SPEC_VERSION"/>
+            <enum value="&quot;XR_META_automatic_layer_filter&quot;"        name="XR_META_AUTOMATIC_LAYER_FILTER_EXTENSION_NAME"/>
+            <enum bitpos="5" extends="XrCompositionLayerSettingsFlagBitsFB" name="XR_COMPOSITION_LAYER_SETTINGS_AUTO_LAYER_FILTER_BIT_META" comment="Indicates compositor may: automatically toggle a texture filtering mechanism to improve visual quality of layer. This must: not be the only bit set. (Added by apiext:XR_META_automatic_layer_filter)"/>
         </require>
     </extension>
 
@@ -10467,10 +10809,34 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         </require>
     </extension>
 
-    <extension name="XR_FB_extension_288" number="288" type="instance" supported="disabled">
+    <extension name="XR_FB_face_tracking2" number="288" type="instance" supported="openxr">
         <require>
-            <enum value="1"                               name="XR_FB_extension_288_SPEC_VERSION"/>
-            <enum value="&quot;XR_FB_extension_288&quot;" name="XR_FB_EXTENSION_288_EXTENSION_NAME"/>
+            <enum value="1"                                name="XR_FB_face_tracking2_SPEC_VERSION"/>
+            <enum value="&quot;XR_FB_face_tracking2&quot;" name="XR_FB_FACE_TRACKING2_EXTENSION_NAME"/>
+
+            <enum offset="12" extends="XrObjectType"       name="XR_OBJECT_TYPE_FACE_TRACKER2_FB"     comment="XrFaceTracker2FB"/>
+            <type name="XrFaceTracker2FB"/>
+
+            <type name="XrFaceExpression2FB"/>
+            <type name="XrFaceExpressionSet2FB"/>
+            <type name="XrFaceTrackingDataSource2FB"/>
+            <type name="XrFaceConfidence2FB"/>
+
+            <enum offset="13" extends="XrStructureType" name="XR_TYPE_SYSTEM_FACE_TRACKING_PROPERTIES2_FB"/>
+            <type name="XrSystemFaceTrackingProperties2FB"/>
+
+            <enum offset="14" extends="XrStructureType" name="XR_TYPE_FACE_TRACKER_CREATE_INFO2_FB"/>
+            <type name="XrFaceTrackerCreateInfo2FB"/>
+
+            <enum offset="15" extends="XrStructureType" name="XR_TYPE_FACE_EXPRESSION_INFO2_FB"/>
+            <type name="XrFaceExpressionInfo2FB"/>
+
+            <enum offset="16" extends="XrStructureType" name="XR_TYPE_FACE_EXPRESSION_WEIGHTS2_FB"/>
+            <type name="XrFaceExpressionWeights2FB"/>
+
+            <command name="xrCreateFaceTracker2FB"/>
+            <command name="xrDestroyFaceTracker2FB"/>
+            <command name="xrGetFaceExpressionWeights2FB"/>
         </require>
     </extension>
 
@@ -11913,10 +12279,16 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         </require>
     </extension>
 
-    <extension name="XR_EXT_user_presence" number="471" type="instance" supported="disabled">
+    <extension name="XR_EXT_user_presence" number="471" type="instance" supported="openxr">
         <require>
             <enum value="1"                                name="XR_EXT_user_presence_SPEC_VERSION"/>
             <enum value="&quot;XR_EXT_user_presence&quot;" name="XR_EXT_USER_PRESENCE_EXTENSION_NAME"/>
+
+            <enum offset="0" extends="XrStructureType"     name="XR_TYPE_EVENT_DATA_USER_PRESENCE_CHANGED_EXT"/>
+            <enum offset="1" extends="XrStructureType"     name="XR_TYPE_SYSTEM_USER_PRESENCE_PROPERTIES_EXT"/>
+
+            <type name="XrEventDataUserPresenceChangedEXT"/>
+            <type name="XrSystemUserPresencePropertiesEXT"/>
         </require>
     </extension>
 
@@ -12119,8 +12491,6 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
             <extend interaction_profile_path="/interaction_profiles/yvr/touch_controller_yvr">
                 <component subpath="/input/pinch_ext/pose"   type="XR_ACTION_TYPE_POSE_INPUT"/>
                 <component subpath="/input/poke_ext/pose"    type="XR_ACTION_TYPE_POSE_INPUT"/>
-                <component subpath="/input/grip/pose"        type="XR_ACTION_TYPE_POSE_INPUT"/>
-                <component subpath="/input/aim/pose"         type="XR_ACTION_TYPE_POSE_INPUT"/>
             </extend>
         </require>
     </extension>
@@ -13620,6 +13990,187 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         <require>
             <enum value="1"                                  name="XR_KHR_game_controller_SPEC_VERSION"/>
             <enum value="&quot;XR_KHR_game_controller&quot;" name="XR_KHR_GAME_CONTROLLER_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_VARJO_extension_713" number="713" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                  name="XR_VARJO_extension_713_SPEC_VERSION"/>
+            <enum value="&quot;XR_VARJO_extension_713&quot;" name="XR_VARJO_EXTENSION_713_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_VARJO_extension_714" number="714" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                  name="XR_VARJO_extension_714_SPEC_VERSION"/>
+            <enum value="&quot;XR_VARJO_extension_714&quot;" name="XR_VARJO_EXTENSION_714_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_VARJO_extension_715" number="715" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                  name="XR_VARJO_extension_715_SPEC_VERSION"/>
+            <enum value="&quot;XR_VARJO_extension_715&quot;" name="XR_VARJO_EXTENSION_715_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_ANDROIDX_extension_716" number="716" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                     name="XR_ANDROIDX_extension_716_SPEC_VERSION"/>
+            <enum value="&quot;XR_ANDROIDX_extension_716&quot;" name="XR_ANDROIDX_EXTENSION_716_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_ANDROIDX_extension_717" number="717" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                     name="XR_ANDROIDX_extension_717_SPEC_VERSION"/>
+            <enum value="&quot;XR_ANDROIDX_extension_717&quot;" name="XR_ANDROIDX_EXTENSION_717_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_ANDROIDX_extension_718" number="718" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                     name="XR_ANDROIDX_extension_718_SPEC_VERSION"/>
+            <enum value="&quot;XR_ANDROIDX_extension_718&quot;" name="XR_ANDROIDX_EXTENSION_718_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_ANDROIDX_extension_719" number="719" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                     name="XR_ANDROIDX_extension_719_SPEC_VERSION"/>
+            <enum value="&quot;XR_ANDROIDX_extension_719&quot;" name="XR_ANDROIDX_EXTENSION_719_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_ANDROIDX_extension_720" number="720" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                     name="XR_ANDROIDX_extension_720_SPEC_VERSION"/>
+            <enum value="&quot;XR_ANDROIDX_extension_720&quot;" name="XR_ANDROIDX_EXTENSION_720_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_ANDROIDX_extension_721" number="721" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                     name="XR_ANDROIDX_extension_721_SPEC_VERSION"/>
+            <enum value="&quot;XR_ANDROIDX_extension_721&quot;" name="XR_ANDROIDX_EXTENSION_721_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_ANDROIDX_extension_722" number="722" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                     name="XR_ANDROIDX_extension_722_SPEC_VERSION"/>
+            <enum value="&quot;XR_ANDROIDX_extension_722&quot;" name="XR_ANDROIDX_EXTENSION_722_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_ANDROIDX_extension_723" number="723" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                     name="XR_ANDROIDX_extension_723_SPEC_VERSION"/>
+            <enum value="&quot;XR_ANDROIDX_extension_723&quot;" name="XR_ANDROIDX_EXTENSION_723_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_ANDROIDX_extension_724" number="724" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                     name="XR_ANDROIDX_extension_724_SPEC_VERSION"/>
+            <enum value="&quot;XR_ANDROIDX_extension_724&quot;" name="XR_ANDROIDX_EXTENSION_724_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_ANDROIDX_extension_725" number="725" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                     name="XR_ANDROIDX_extension_725_SPEC_VERSION"/>
+            <enum value="&quot;XR_ANDROIDX_extension_725&quot;" name="XR_ANDROIDX_EXTENSION_725_EXTENSION_NAME"/>
+        </require>
+    </extension>
+    <extension name="XR_ANDROIDSYS_extension_726" number="726" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                       name="XR_ANDROIDSYS_extension_726_SPEC_VERSION"/>
+            <enum value="&quot;XR_ANDROIDSYS_extension_726&quot;" name="XR_ANDROIDSYS_EXTENSION_726_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_ANDROIDSYS_extension_727" number="727" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                       name="XR_ANDROIDSYS_extension_727_SPEC_VERSION"/>
+            <enum value="&quot;XR_ANDROIDSYS_extension_727&quot;" name="XR_ANDROIDSYS_EXTENSION_727_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_ANDROIDSYS_extension_728" number="728" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                       name="XR_ANDROIDSYS_extension_728_SPEC_VERSION"/>
+            <enum value="&quot;XR_ANDROIDSYS_extension_728&quot;" name="XR_ANDROIDSYS_EXTENSION_728_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_ANDROIDSYS_extension_729" number="729" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                       name="XR_ANDROIDSYS_extension_729_SPEC_VERSION"/>
+            <enum value="&quot;XR_ANDROIDSYS_extension_729&quot;" name="XR_ANDROIDSYS_EXTENSION_729_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_ANDROIDSYS_extension_730" number="730" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                       name="XR_ANDROIDSYS_extension_730_SPEC_VERSION"/>
+            <enum value="&quot;XR_ANDROIDSYS_extension_730&quot;" name="XR_ANDROIDSYS_EXTENSION_730_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_ANDROIDSYS_extension_731" number="731" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                       name="XR_ANDROIDSYS_extension_731_SPEC_VERSION"/>
+            <enum value="&quot;XR_ANDROIDSYS_extension_731&quot;" name="XR_ANDROIDSYS_EXTENSION_731_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_ANDROIDSYS_extension_732" number="732" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                       name="XR_ANDROIDSYS_extension_732_SPEC_VERSION"/>
+            <enum value="&quot;XR_ANDROIDSYS_extension_732&quot;" name="XR_ANDROIDSYS_EXTENSION_732_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_ANDROIDSYS_extension_733" number="733" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                       name="XR_ANDROIDSYS_extension_733_SPEC_VERSION"/>
+            <enum value="&quot;XR_ANDROIDSYS_extension_733&quot;" name="XR_ANDROIDSYS_EXTENSION_733_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_ANDROIDSYS_extension_734" number="734" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                       name="XR_ANDROIDSYS_extension_734_SPEC_VERSION"/>
+            <enum value="&quot;XR_ANDROIDSYS_extension_734&quot;" name="XR_ANDROIDSYS_EXTENSION_734_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_ANDROIDSYS_extension_735" number="735" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                       name="XR_ANDROIDSYS_extension_735_SPEC_VERSION"/>
+            <enum value="&quot;XR_ANDROIDSYS_extension_735&quot;" name="XR_ANDROIDSYS_EXTENSION_735_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_LEIA_extension_736" number="736" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                 name="XR_LEIA_extension_736_SPEC_VERSION"/>
+            <enum value="&quot;XR_LEIA_extension_736&quot;" name="XR_LEIA_EXTENSION_736_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_LEIA_extension_737" number="737" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                 name="XR_LEIA_extension_737_SPEC_VERSION"/>
+            <enum value="&quot;XR_LEIA_extension_737&quot;" name="XR_LEIA_EXTENSION_737_EXTENSION_NAME"/>
+        </require>
+    </extension>
+
+    <extension name="XR_LEIA_extension_738" number="738" type="instance" supported="disabled">
+        <require>
+            <enum value="1"                                 name="XR_LEIA_extension_738_SPEC_VERSION"/>
+            <enum value="&quot;XR_LEIA_extension_738&quot;" name="XR_LEIA_EXTENSION_738_EXTENSION_NAME"/>
         </require>
     </extension>
 
