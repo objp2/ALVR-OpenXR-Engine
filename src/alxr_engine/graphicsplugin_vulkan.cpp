@@ -3441,54 +3441,96 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
         return memRequirements.size;
     }
 
-    void ClearImageDescriptorSetLayouts()
+    void ClearImageDescriptorSets()
     {
-        if (m_vkDevice == VK_NULL_HANDLE)
-            return;
-        if (m_descriptorSets.size() > 0) {
-            assert(m_descriptorPool != VK_NULL_HANDLE);
-            CHECK_VKCMD(vkFreeDescriptorSets(m_vkDevice, m_descriptorPool, (std::uint32_t)m_descriptorSets.size(), m_descriptorSets.data()));
-        }
-        if (m_descriptorPool != VK_NULL_HANDLE) {
+#ifdef XR_USE_PLATFORM_ANDROID
+        m_DescriptorSetSlot = 0;
+        m_descriptorSets.clear();
+#endif
+        if (m_vkDevice != VK_NULL_HANDLE && m_descriptorPool != VK_NULL_HANDLE) {
             vkDestroyDescriptorPool(m_vkDevice, m_descriptorPool, nullptr);
         }
-        m_descriptorSets.clear();
         m_descriptorPool = VK_NULL_HANDLE;
     }
 
-    void CreateImageDescriptorSetLayouts()
+    void CreateImageDescriptorSets()
     {
         if (m_descriptorPool != VK_NULL_HANDLE ||
             m_vkDevice == VK_NULL_HANDLE)
             return;
-        const std::uint32_t swapChainCount = static_cast<uint32_t>(m_swapchainImageContexts.back().swapchainImages.size());
-        
+
+        // 
+        // The combind_image_sampler here will be ycbcr conversion sample: 
+        // Notes https://registry.khronos.org/vulkan/specs/1.3-extensions/html/vkspec.html#VkDescriptorPoolSize
+        //
+        //    "...When creating a descriptor pool that will contain descriptors for combined image samplers of multi-planar formats, 
+        //     an application needs to account for non-trivial descriptor consumption when choosing the descriptorCount value, as 
+        //     indicated by VkSamplerYcbcrConversionImageFormatProperties::combinedImageSamplerDescriptorCount.
+        // 
+        //     For simplicity the application can use the 
+        //     VkPhysicalDeviceMaintenance6PropertiesKHR::maxCombinedImageSamplerDescriptorCount property, which is 
+        //     sized to accommodate any and all formats that require a sampler Y′CBCR conversion supported by the implementation."
+        //
+        // As of writing VK_KHR_maintenance6 has very low device coverage, no Android based device supports its so for now we just use
+        // the maxium possible planes (+ potential alpha) for the descriptor count.
+        // for more details refer to https://github.com/KhronosGroup/Vulkan-Guide/blob/main/chapters/extensions/VK_KHR_sampler_ycbcr_conversion.adoc#combinedimagesamplerdescriptorcount
+        //
+        //
+        constexpr const std::uint32_t MaxCombinedImageSamplerYcbcrDescriptorCount = 4;
+
+#ifdef XR_USE_PLATFORM_ANDROID
+        const std::uint32_t descriptorSetCount = MaxCombinedImageSamplerYcbcrDescriptorCount * 12;
+#else
+        const std::uint32_t descriptorSetCount = MaxCombinedImageSamplerYcbcrDescriptorCount * static_cast<std::uint32_t>(m_videoTextures.size());
+#endif
+
         const std::array<const VkDescriptorPoolSize, 1> poolSizes{
             VkDescriptorPoolSize {
                 .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                .descriptorCount = swapChainCount,
+                .descriptorCount = descriptorSetCount,
             }
         };
         const VkDescriptorPoolCreateInfo poolInfo {
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
             .pNext = nullptr,
-            .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
-            .maxSets = swapChainCount,
+            .flags = 0,
+            .maxSets = descriptorSetCount,
             .poolSizeCount = static_cast<std::uint32_t>(poolSizes.size()),
             .pPoolSizes = poolSizes.data()
         };
         CHECK_VKCMD(vkCreateDescriptorPool(m_vkDevice, &poolInfo, nullptr, &m_descriptorPool));
         CHECK(m_descriptorPool != VK_NULL_HANDLE);
 
-        const VkDescriptorSetAllocateInfo allocInfo {
-            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-            .pNext = nullptr,
-            .descriptorPool = m_descriptorPool,
-            .descriptorSetCount = 1,
-            .pSetLayouts = &m_videoStreamLayout.descriptorSetLayout
-        };
-        m_descriptorSets.resize(1);
-        CHECK_VKCMD(vkAllocateDescriptorSets(m_vkDevice, &allocInfo, m_descriptorSets.data()));
+#ifdef XR_USE_PLATFORM_ANDROID
+        CHECK(m_videoStreamLayout.descriptorSetLayout != VK_NULL_HANDLE);
+        m_DescriptorSetSlot = 0;
+        m_descriptorSets.clear();
+        //
+        // The commented code will not work unless there is descriptorSetLayout per desciptor set, == VkDescriptorSetAllocateInfo::descriptorSetCount
+        // the first descriptorSetLayout could be duplicated but there is not much point, this is not a freqeuent operation.
+        //
+        //const VkDescriptorSetAllocateInfo allocInfo = {
+        //    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        //    .pNext = nullptr,
+        //    .descriptorPool = m_descriptorPool,
+        //    .descriptorSetCount = descriptorSetCount,
+        //    .pSetLayouts = &m_videoStreamLayout.descriptorSetLayout
+        //};
+        //m_descriptorSets.resize(descriptorSetCount, VK_NULL_HANDLE);
+        //CHECK_VKCMD(vkAllocateDescriptorSets(m_vkDevice, &allocInfo, m_descriptorSets.data()));
+        m_descriptorSets.resize(descriptorSetCount, VK_NULL_HANDLE);
+        for (auto& desciptor : m_descriptorSets) {
+            const VkDescriptorSetAllocateInfo allocInfo = {
+                .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                .pNext = nullptr,
+                .descriptorPool = m_descriptorPool,
+                .descriptorSetCount = 1,
+                .pSetLayouts = &m_videoStreamLayout.descriptorSetLayout
+            };
+            CHECK_VKCMD(vkAllocateDescriptorSets(m_vkDevice, &allocInfo, &desciptor));
+            CHECK(desciptor != VK_NULL_HANDLE);
+        }
+#endif
     }
 
     struct alignas(16) SpecializationData {
@@ -3623,7 +3665,7 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
             // null-out pSpecializationInfo as it refers to local stack vars.
             fragShaderInfo.pSpecializationInfo = nullptr;
         }
-        CreateImageDescriptorSetLayouts();
+        CreateImageDescriptorSets();
     }
 
     void CreateVideoStreamPipeline(const VkFormat pixFmt)
@@ -3696,7 +3738,7 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
         m_lastTexIndex = std::size_t(-1);
         textureIdx = std::size_t(-1);
 #endif
-        ClearImageDescriptorSetLayouts();
+        ClearImageDescriptorSets();
         for (auto& pipeline : m_videoStreamPipelines)
             pipeline.Clear();
         m_videoStreamLayout.Clear();
@@ -3749,6 +3791,8 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
                 }
             };
             CHECK_VKCMD(vkCreateImageView(m_vkDevice, &viewInfo, nullptr, &vidTex.imageView));
+
+            SetVideoTextureBindings(vidTex);
         }
     }
 
@@ -3756,7 +3800,6 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
     {
         // NOT USED OR REQUIRED, Please check UpdateVideoTexturesMediaCodec Instead.
 #if 0
-        //CreateImageDescriptorSetLayouts();
         const auto pixelFmt = MapFormat(pixfmt);
         CreateVideoStreamPipeline(pixelFmt);
         
@@ -3793,6 +3836,8 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
                 }
             };
             CHECK_VKCMD(vkCreateImageView(m_vkDevice, &viewInfo, nullptr, &vidTex.imageView));
+
+            SetVideoTextureBindings(vidTex);
         }
 #endif
     }
@@ -3881,6 +3926,8 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
                 }
             };
             CHECK_VKCMD(vkCreateImageView(m_vkDevice, &viewInfo, nullptr, &vidTex.imageView));
+
+            SetVideoTextureBindings(vidTex);
         }
 #else
         (void)width; (void)height; (void)pixfmt;
@@ -4036,14 +4083,12 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
             auto& newCurrentTexture = m_videoTextures[VidTextureIndex::Current];
             m_videoTextures[VidTextureIndex::DeferredDelete] = std::move(newCurrentTexture);
             newCurrentTexture = std::move(newVideoTex);
-            m_isVideoTextureBindingsDirty = true;
         }
 #else
         textureIdx = m_renderTex.load();
         if (textureIdx == std::size_t(-1) || textureIdx == m_lastTexIndex)
             return;
         m_lastTexIndex = textureIdx;
-        m_isVideoTextureBindingsDirty = true;
 #endif
     }
 
@@ -4206,6 +4251,31 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
         };
         CHECK_VKCMD(vkCreateImageView(m_vkDevice, &viewInfo, nullptr, &newVideoTex.imageView));
 
+        newVideoTex.descriptorSet = m_descriptorSets[m_DescriptorSetSlot];
+        assert(newVideoTex.descriptorSet != VK_NULL_HANDLE);
+        m_DescriptorSetSlot = (m_DescriptorSetSlot + 1) % m_descriptorSets.size();
+
+        const VkDescriptorImageInfo imageInfo{
+            .sampler = m_videoStreamLayout.textureSampler,
+            .imageView = newVideoTex.imageView,
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        };
+        const std::array<VkWriteDescriptorSet, 1> descriptorWrites{
+            VkWriteDescriptorSet {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .pNext = nullptr,
+                .dstSet = newVideoTex.descriptorSet,
+                .dstBinding = 0,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .pImageInfo = &imageInfo,
+                .pBufferInfo = nullptr,
+                .pTexelBufferView = nullptr
+            }
+        };
+        vkUpdateDescriptorSets(m_vkDevice, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+
         using namespace std::literals::chrono_literals;
         constexpr static const auto QueueTextureWaitTime = 100ms;
         if (!m_videoTexQueue.wait_enqueue_timed(std::move(newVideoTex), QueueTextureWaitTime)) {
@@ -4295,16 +4365,14 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
             auto& currentTexture = m_videoTextures[VidTextureIndex];
             if (currentTexture.texture.texImage == VK_NULL_HANDLE)
                 return;
-            if (m_isVideoTextureBindingsDirty) {
-                m_isVideoTextureBindingsDirty = false;
-                UpdateVideoTextureBinding(currentTexture);
-            }
             currentTexture.texture.TransitionLayout(m_cmdBuffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
             vkCmdBeginRenderPass(m_cmdBuffer.buf, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
             vkCmdBindPipeline(m_cmdBuffer.buf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_videoStreamPipelines[static_cast<std::size_t>(newMode)].pipe);
-            vkCmdBindDescriptorSets(m_cmdBuffer.buf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_videoStreamLayout.layout, 0, 1, m_descriptorSets.data(), 0, nullptr);
+
+            assert(currentTexture.descriptorSet != VK_NULL_HANDLE);
+            vkCmdBindDescriptorSets(m_cmdBuffer.buf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_videoStreamLayout.layout, 0, 1, &currentTexture.descriptorSet, 0, nullptr);
 
             vkCmdDraw(m_cmdBuffer.buf, 3, 1, 0, 0);
 
@@ -4341,16 +4409,14 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
             auto& currentTexture = m_videoTextures[VidTextureIndex];
             if (currentTexture.texture.texImage == VK_NULL_HANDLE)
                 return;
-            if (m_isVideoTextureBindingsDirty) {
-                m_isVideoTextureBindingsDirty = false;
-                UpdateVideoTextureBinding(currentTexture);
-            }
             currentTexture.texture.TransitionLayout(m_cmdBuffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
             vkCmdBeginRenderPass(m_cmdBuffer.buf, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
             vkCmdBindPipeline(m_cmdBuffer.buf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_videoStreamPipelines[static_cast<std::size_t>(mode)].pipe);
-            vkCmdBindDescriptorSets(m_cmdBuffer.buf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_videoStreamLayout.layout, 0, 1, m_descriptorSets.data(), 0, nullptr);
+
+            assert(currentTexture.descriptorSet != VK_NULL_HANDLE);
+            vkCmdBindDescriptorSets(m_cmdBuffer.buf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_videoStreamLayout.layout, 0, 1, &currentTexture.descriptorSet, 0, nullptr);
 
             vkCmdPushConstants(m_cmdBuffer.buf, m_videoStreamLayout.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(std::uint32_t), &viewID);
             vkCmdDraw(m_cmdBuffer.buf, 3, 1, 0, 0);
@@ -4370,7 +4436,7 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
     }
     
     virtual ~VulkanGraphicsPlugin() override {
-        ClearImageDescriptorSetLayouts();
+        ClearImageDescriptorSets();
         Log::Write(Log::Level::Verbose, "VulkanGraphicsPlugin destroyed.");
     }
 
@@ -4415,7 +4481,10 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
     VkQueue m_VideoCpyQueue{ VK_NULL_HANDLE };
 
     VkDescriptorPool m_descriptorPool{ VK_NULL_HANDLE };
+#ifdef XR_USE_PLATFORM_ANDROID
     std::vector<VkDescriptorSet> m_descriptorSets{};
+    std::size_t m_DescriptorSetSlot = 0;
+#endif
 
     CmdBuffer m_videoCpyCmdBuffer{};
     
@@ -4471,6 +4540,8 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
         std::size_t height = 0;
         VkFormat    format = VK_FORMAT_UNDEFINED;
 
+        VkDescriptorSet descriptorSet{ VK_NULL_HANDLE };
+
         inline VideoTexture() noexcept = default;
         inline ~VideoTexture() noexcept {
             Clear();
@@ -4488,6 +4559,7 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
             std::swap(width, other.width);
             std::swap(height, other.height);
             std::swap(format, other.format);
+            std::swap(descriptorSet, other.descriptorSet);
 #if defined(XR_USE_GRAPHICS_API_D3D11)
             d3d11vaSharedTexture.Swap(other.d3d11vaSharedTexture);
             std::swap(sharedHandle, other.sharedHandle);
@@ -4511,6 +4583,7 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
             std::swap(width, other.width);
             std::swap(height, other.height);
             std::swap(format, other.format);
+            std::swap(descriptorSet, other.descriptorSet);
 #if defined(XR_USE_GRAPHICS_API_D3D11)
             d3d11vaSharedTexture.Swap(other.d3d11vaSharedTexture);
             std::swap(sharedHandle, other.sharedHandle);
@@ -4552,6 +4625,7 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
             width = 0;
             height = 0;
             format = VK_FORMAT_UNDEFINED;
+            descriptorSet = VK_NULL_HANDLE;
 #ifdef XR_USE_PLATFORM_ANDROID
             if (ndkImage != nullptr) {
                 //Log::Write(Log::Level::Info, "Deleteing AImage!!!");
@@ -4571,39 +4645,40 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
         }
     };
 
-    void UpdateVideoTextureBinding(const VideoTexture& vidTexture)
-    {
-        CHECK(m_videoStreamLayout.textureSampler != VK_NULL_HANDLE);
-        CHECK(vidTexture.imageView != VK_NULL_HANDLE);
-        const auto swapChainCount = static_cast<std::uint32_t>(m_swapchainImageContexts.back().swapchainImages.size());
-        for (size_t i = 0; i < m_descriptorSets.size(); ++i)
-        {
-            const VkDescriptorImageInfo imageInfo{
-                .sampler = m_videoStreamLayout.textureSampler,
-                .imageView = vidTexture.imageView,
-                .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-            };
-            const std::array<VkWriteDescriptorSet, 1> descriptorWrites{
-                VkWriteDescriptorSet {
-                    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                    .pNext = nullptr,
-                    .dstSet = m_descriptorSets[i],
-                    .dstBinding = 0,
-                    .dstArrayElement = 0,
-                    .descriptorCount = 1,
-                    .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,                
-                    .pImageInfo = &imageInfo,
-                    .pBufferInfo = nullptr,
-                    .pTexelBufferView = nullptr
-                }
-            };
-            vkUpdateDescriptorSets(m_vkDevice, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
-        }
-    }
+    void SetVideoTextureBindings(VideoTexture& vidTex) {
+        assert(m_vkDevice != VK_NULL_HANDLE && m_descriptorPool != VK_NULL_HANDLE);
+        assert(m_videoStreamLayout.descriptorSetLayout != VK_NULL_HANDLE);
+        assert(vidTex.IsValid());
 
-    inline void UpdateVideoTextureBinding(const std::size_t vidTexIndex)
-    {
-        UpdateVideoTextureBinding(m_videoTextures[vidTexIndex]);
+        const VkDescriptorSetAllocateInfo allocInfo = {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            .pNext = nullptr,
+            .descriptorPool = m_descriptorPool,
+            .descriptorSetCount = 1,
+            .pSetLayouts = &m_videoStreamLayout.descriptorSetLayout
+        };
+        CHECK_VKCMD(vkAllocateDescriptorSets(m_vkDevice, &allocInfo, &vidTex.descriptorSet));
+
+        const VkDescriptorImageInfo imageInfo{
+            .sampler = m_videoStreamLayout.textureSampler,
+            .imageView = vidTex.imageView,
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        };
+        const std::array<VkWriteDescriptorSet, 1> descriptorWrites{
+            VkWriteDescriptorSet {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .pNext = nullptr,
+                .dstSet = vidTex.descriptorSet,
+                .dstBinding = 0,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .pImageInfo = &imageInfo,
+                .pBufferInfo = nullptr,
+                .pTexelBufferView = nullptr
+            }
+        };
+        vkUpdateDescriptorSets(m_vkDevice, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
 
     static_assert(VideoTexCount >= 2);
@@ -4628,7 +4703,6 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
     
     bool m_noServerFramerateLock = false;
     bool m_noFrameSkip = false;
-    bool m_isVideoTextureBindingsDirty{ true };
 
 // END VIDEO STREAM DATA /////////////////////////////////////////////////////////////
 

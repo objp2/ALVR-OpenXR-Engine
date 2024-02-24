@@ -314,6 +314,8 @@ virtual void CreateVideoTexturesCUDA(const std::size_t width, const std::size_t 
         };
         CHECK_VKCMD(vkCreateImageView(m_vkDevice, &viewInfo, nullptr, &vidTex.imageView));
 
+        SetVideoTextureBindings(vidTex);
+
         for (std::size_t planeIndex = 0; planeIndex < newSharedTex.planeArrays.size(); ++planeIndex)
         {
             auto texMemory = vidTex.texture.texMemory[planeIndex];
