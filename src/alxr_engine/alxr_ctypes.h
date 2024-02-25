@@ -197,9 +197,10 @@ struct ALXRDecoderConfig
 };
 
 struct ALXRStreamConfig {
-    ALXRTrackingSpace   trackingSpaceType;
-    ALXRRenderConfig    renderConfig;
-    ALXRDecoderConfig   decoderConfig;
+    ALXRTrackingSpace trackingSpaceType;
+    ALXRRenderConfig  renderConfig;
+    ALXRDecoderConfig decoderConfig;
+    bool              clientPrediction;
 };
 
 enum ALXRLogOptions : uint32_t {

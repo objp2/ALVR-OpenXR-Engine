@@ -26,6 +26,7 @@
 #include "latency_manager.h"
 #include "decoder_thread.h"
 #include "foveation.h"
+#include "input_thread.h"
 
 #if defined(XR_USE_PLATFORM_WIN32) && defined(XR_EXPORT_HIGH_PERF_GPU_SELECTION_SYMBOLS)
 #pragma message("Enabling Symbols to select high-perf GPUs first")
@@ -39,19 +40,14 @@ extern "C" {
 }
 #endif
 
-constexpr inline const ALXREyeInfo EyeInfoZero {
-    .eyeFov = { {0,0,0,0}, {0,0,0,0} },
-    .ipd = 0.0f
-};
-
 using IOpenXrProgramPtr = std::shared_ptr<IOpenXrProgram>;
 using ClientCtxPtr = std::shared_ptr<const ALXRClientCtx>;
 
 ClientCtxPtr      gClientCtx{ nullptr };
 IOpenXrProgramPtr gProgram{ nullptr };
 XrDecoderThread   gDecoderThread{};
+ALXR::XrInputThread gInputThread{};
 std::mutex        gRenderMutex{};
-ALXREyeInfo       gLastEyeInfo = EyeInfoZero;
 
 namespace ALXRStrings {
     constexpr inline const char* const HeadPath         = "/user/head";
@@ -182,6 +178,12 @@ bool alxr_init(const ALXRClientCtx* rCtx, /*[out]*/ ALXRSystemProperties* system
         if (systemProperties)
             *systemProperties = rustSysProp;
 
+        const ALXR::XrInputThread::StartCtx startCtx = {
+            .programPtr = gProgram,
+            .clientCtx = gClientCtx,
+        };
+        gInputThread.Start(startCtx);
+
         Log::Write(Log::Level::Info, Fmt("device name: %s", rustSysProp.systemName));
         Log::Write(Log::Level::Info, "openxrInit finished successfully");
 
@@ -209,6 +211,7 @@ void alxr_destroy() {
         return;
     }
     Log::Write(Log::Level::Info, "openxrShutdown: Shuttingdown");
+    gInputThread.Stop();
     if (const auto programPtr = gProgram) {
         if (const auto graphicsPtr = programPtr->GetGraphicsPlugin()) {
             std::scoped_lock lk(gRenderMutex);
@@ -296,8 +299,6 @@ void alxr_set_stream_config(const ALXRStreamConfig config)
         programPtr->CreateSwapchains(rc.eyeWidth, rc.eyeHeight);
     }
 
-    gLastEyeInfo = EyeInfoZero;
-
 #ifndef XR_DISABLE_DECODER_THREAD
     if (!programPtr->IsHeadlessSession()) {
         Log::Write(Log::Level::Info, "Starting decoder thread.");
@@ -327,10 +328,15 @@ void alxr_set_stream_config(const ALXRStreamConfig config)
     };
     SendDummyBatteryLevels();
     programPtr->SetStreamConfig(config);
+
+    gInputThread.SetTargetFrameRate(config.renderConfig.refreshRate)
+        .SetClientPrediction(config.clientPrediction)
+        .SetConnected(true);
 }
 
 void alxr_on_server_disconnect()
 {
+    gInputThread.SetConnected(false);
     if (const auto programPtr = gProgram) {
         programPtr->SetRenderMode(IOpenXrProgram::RenderMode::Lobby);
     }
@@ -361,53 +367,9 @@ void alxr_on_resume()
         programPtr->Resume();
 }
 
-inline void LogViewConfig(const ALXREyeInfo& newEyeInfo)
-{
-    constexpr const auto FmtEyeFov = [](const EyeFov& eye) {
-        constexpr const float deg = 180.0f / 3.14159265358979323846f;
-        return Fmt("{ .left=%f, .right=%f, .top=%f, .bottom=%f }",
-            eye.left * deg, eye.right * deg, eye.top * deg, eye.bottom * deg);
-    };
-    const auto lEyeFovStr = FmtEyeFov(newEyeInfo.eyeFov[0]);
-    const auto rEyeFovStr = FmtEyeFov(newEyeInfo.eyeFov[1]);
-    Log::Write(Log::Level::Info, Fmt("New view config sent:\n"
-        "\tViewConfig {\n"
-        "\t  .ipd = %f,\n"
-        "\t  .eyeFov {\n"
-        "\t    .leftEye  = %s,\n"
-        "\t    .rightEye = %s\n"
-        "\t  }\n"
-        "\t}",
-        newEyeInfo.ipd * 1000.0f, lEyeFovStr.c_str(), rEyeFovStr.c_str()));
-}
-
-void alxr_on_tracking_update(const bool clientsidePrediction)
-{
-    const auto clientCtx = gClientCtx;
-    if (clientCtx == nullptr)
-        return;
-    const auto xrProgram = gProgram;
-    if (xrProgram == nullptr || !xrProgram->IsSessionRunning())
-        return;
-
-    ALXREyeInfo newEyeInfo{};
-    if (!gProgram->GetEyeInfo(newEyeInfo))
-        return;
-    if (std::abs(newEyeInfo.ipd - gLastEyeInfo.ipd) > 0.01f ||
-        std::abs(newEyeInfo.eyeFov[0].left - gLastEyeInfo.eyeFov[0].left) > 0.01f ||
-        std::abs(newEyeInfo.eyeFov[1].left - gLastEyeInfo.eyeFov[1].left) > 0.01f)
-    {
-        gLastEyeInfo = newEyeInfo;
-        gClientCtx->viewsConfigSend(&newEyeInfo);
-        LogViewConfig(newEyeInfo);
-    }
-
-    xrProgram->PollActions();
-
-    TrackingInfo newInfo;
-    if (!xrProgram->GetTrackingInfo(newInfo, clientsidePrediction))
-        return;
-    clientCtx->inputSend(&newInfo);
+[[deprecated]]
+void alxr_on_tracking_update(const bool /*clientsidePrediction*/) {
+    CHECK_MSG(false, "Deprecated function called!");
 }
 
 void alxr_on_receive(const unsigned char* packet, unsigned int packetSize)
