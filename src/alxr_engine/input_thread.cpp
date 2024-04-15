@@ -62,6 +62,21 @@ void XrInputThread::Run(const XrInputThread::StartCtx& ctx) {
     using namespace std::chrono_literals;
     static_assert(XrSteadyClock::is_steady);
 
+#ifdef XR_USE_PLATFORM_ANDROID
+    const struct ScopedJNIEnv final {
+        JNIEnv* jniEnv = nullptr;
+        JavaVM* vm;
+        ScopedJNIEnv(JavaVM* vmp): vm{vmp} {
+            if (vm)
+                vm->AttachCurrentThread(&jniEnv, nullptr);
+        }
+        ~ScopedJNIEnv() {
+            if (vm)
+                vm->DetachCurrentThread();
+        }
+    } scopedJNIEnv{ reinterpret_cast<JavaVM*>(ctx.clientCtx->applicationVM) };
+#endif
+
     ctx.programPtr->SetAndroidAppThread(AndroidThreadType::AppWorker);
 
     auto nextWakeTime = XrSteadyClock::now();
