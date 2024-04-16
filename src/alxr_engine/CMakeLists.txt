@@ -181,7 +181,7 @@ endif()
 #set(OCULUS_OXR_EXT_HEADERS)
 #if (USE_OCULUS_OXR_EXT_HEADERS AND NOT ANDROID)
 #    message(STATUS "Oculus OpenXR Extension Headers Enabled")
-    set(OCULUS_OXR_EXT_HEADERS ${OCULUS_OPENXR_MOBILE_SDK}/Include)
+    set(OCULUS_OXR_EXT_HEADERS ${OCULUS_OPENXR_MOBILE_SDK})
 #    add_definitions(-DXR_USE_OXR_OCULUS)
 #endif()
 

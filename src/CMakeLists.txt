@@ -827,7 +827,7 @@ if (USE_OCULUS_MOBILE_LOADER AND ANDROID)
             openxr_loader
             PROPERTY
             INTERFACE_INCLUDE_DIRECTORIES
-            ${OCULUS_OPENXR_MOBILE_SDK}/Include
+            ${OCULUS_OPENXR_MOBILE_SDK}
     )
     set_property(
             TARGET

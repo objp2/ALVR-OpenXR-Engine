@@ -1,0 +1,67 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath "com.android.tools.build:gradle:7.0.3"
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+apply plugin: 'com.android.application'
+
+android {
+  compileSdk 30
+
+  defaultConfig {
+    applicationId "com.oculus.sdk.scenemodel"
+    minSdk 26
+    targetSdk 30
+    versionCode 1
+    versionName "1.0"
+
+    // override app plugin abiFilters for 64-bit support
+    externalNativeBuild {
+      ndk {
+        abiFilters 'arm64-v8a'
+      }
+      ndkBuild {
+        abiFilters 'arm64-v8a'
+      }
+      cmake {
+         targets "scenemodel"
+      }
+    }
+  }
+
+  sourceSets {
+    main {
+      manifest.srcFile 'AndroidManifest.xml'
+      java.srcDirs = ['../../java']
+      assets.srcDirs = ['../../assets']
+      res.srcDirs = ['../../res']
+    }
+  }
+
+  buildTypes {
+    debug {
+      debuggable true
+    }
+
+    release {
+      debuggable false
+    }
+  }
+
+  externalNativeBuild {
+    cmake {
+      path file('../../../../CMakeLists.txt')
+    }
+  }
+}
