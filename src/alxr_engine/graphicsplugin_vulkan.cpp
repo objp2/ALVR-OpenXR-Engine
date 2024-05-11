@@ -3546,28 +3546,40 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
         const PassthroughMode ptMode
     ) const
     {
+#define VEC2_OFFSET_OF(STRUCT, MEMBER)  \
+    offsetof(STRUCT, MEMBER.x),         \
+	offsetof(STRUCT, MEMBER.y)
+
+#define VEC3_OFFSET_OF(STRUCT, MEMBER)  \
+    VEC2_OFFSET_OF(STRUCT, MEMBER),     \
+	offsetof(STRUCT, MEMBER.z)
+
         using SDType = SpecializationData;
         static_assert(std::is_standard_layout<SDType>::value);
-        constexpr static const std::array<std::uint32_t, 13> MemberOffsets {
-            offsetof(SDType, fdParams.eyeSizeRatio.x),
-            offsetof(SDType, fdParams.eyeSizeRatio.y),
-            offsetof(SDType, fdParams.centerSize.x),
-            offsetof(SDType, fdParams.centerSize.y),
-            offsetof(SDType, fdParams.centerShift.x),
-            offsetof(SDType, fdParams.centerShift.y),
-            offsetof(SDType, fdParams.edgeRatio.x),
-            offsetof(SDType, fdParams.edgeRatio.y),
+        constexpr static const std::array<std::uint32_t, 27> MemberOffsets {
+            VEC2_OFFSET_OF(SDType, fdParams.eyeSizeRatio),
+            VEC2_OFFSET_OF(SDType, fdParams.edgeRatio),
+            VEC2_OFFSET_OF(SDType, fdParams.c1),
+            VEC2_OFFSET_OF(SDType, fdParams.c2),
+            VEC2_OFFSET_OF(SDType, fdParams.loBound),
+            VEC2_OFFSET_OF(SDType, fdParams.hiBound),
+            VEC2_OFFSET_OF(SDType, fdParams.aLeft),
+            VEC2_OFFSET_OF(SDType, fdParams.bLeft),
+            VEC2_OFFSET_OF(SDType, fdParams.aRight),
+            VEC2_OFFSET_OF(SDType, fdParams.bRight),
+            VEC2_OFFSET_OF(SDType, fdParams.cRight),
             offsetof(SDType, enableSRGBLinearize),
             offsetof(SDType, alphaValue),
-            offsetof(SDType, keyColour.x),
-            offsetof(SDType, keyColour.y),
-            offsetof(SDType, keyColour.z),
+            VEC3_OFFSET_OF(SDType, keyColour),
         };
+#undef VEC2_OFFSET_OF
+#undef VEC3_OFFSET_OF
+
         std::uint32_t memberOffsetPos = 0;
         SpecializationMap specializationEMap{};
         specializationEMap.reserve(MemberOffsets.size());
         if (enableFDParams) {
-            for (; memberOffsetPos < 8u; ++memberOffsetPos) {
+            for (; memberOffsetPos < 22u; ++memberOffsetPos) {
                 assert(memberOffsetPos < MemberOffsets.size());
                 specializationEMap.push_back({
                     .constantID = memberOffsetPos,
@@ -3576,7 +3588,7 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
                     });
             }
         } else {
-            memberOffsetPos = 8;
+            memberOffsetPos = 22u;
         }
 
         const std::uint32_t constID = memberOffsetPos++;
