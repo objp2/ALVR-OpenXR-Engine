@@ -116,12 +116,6 @@
 #include <openxr/openxr_platform.h>
 #include <openxr/openxr_reflection.h>
 
-#ifdef XR_USE_OXR_PICO_V4
-    #include <openxr/openxr_pico.h>
-#endif
-
-#ifdef XR_USE_OXR_PICO_ANY_VERSION
-
 #ifdef XR_USE_OXR_PICO
     // These are no longer declared/defined in the Pico OpenXR SDK v2.1.0.
 	#ifndef XR_PICO_BOUNDARY_EXT_EXTENSION_NAME
@@ -137,8 +131,6 @@
         unsigned int                              size_in,
         void** output,
         unsigned int                              size_out);
-#endif
-
 #endif
 
 #include <meta_openxr_preview/fb_face_tracking2.h>

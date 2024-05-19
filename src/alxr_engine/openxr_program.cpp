@@ -555,20 +555,8 @@ struct OpenXrProgram final : IOpenXrProgram {
         { XR_META_LOCAL_DIMMING_EXTENSION_NAME, false },
 
         { XR_MND_HEADLESS_EXTENSION_NAME, false },
-#ifdef XR_USE_OXR_PICO_V4
-#pragma message ("Pico 4.7.x OXR Extensions Enabled.")
-        { XR_PICO_PERFORMANCE_SETTINGS_EXTENSION_NAME, false },
-        { XR_PICO_VIEW_STATE_EXT_ENABLE_EXTENSION_NAME, false },
-        { XR_PICO_FRAME_END_INFO_EXT_EXTENSION_NAME, false },
-        { XR_PICO_ANDROID_CONTROLLER_FUNCTION_EXT_ENABLE_EXTENSION_NAME, false },
-        { XR_PICO_CONFIGS_EXT_EXTENSION_NAME, false },
-        { XR_PICO_RESET_SENSOR_EXTENSION_NAME, false },
-        { XR_PICO_SESSION_BEGIN_INFO_EXT_ENABLE_EXTENSION_NAME, false },
-        { XR_PICO_SINGLEPASS_ENABLE_EXTENSION_NAME, false },
-#else 
         { XR_BD_CONTROLLER_INTERACTION_EXTENSION_NAME, false },
-#endif
-#ifdef XR_USE_OXR_PICO_ANY_VERSION
+#ifdef XR_USE_OXR_PICO
         { XR_PICO_BOUNDARY_EXT_EXTENSION_NAME, false },
         { "XR_PICO_boundary", false },
 #endif
@@ -646,7 +634,7 @@ struct OpenXrProgram final : IOpenXrProgram {
 
     template < const std::size_t major, const std::size_t minor >
     inline bool IsPrePicoPUI() const {
-#ifdef XR_USE_OXR_PICO_ANY_VERSION
+#ifdef XR_USE_OXR_PICO
         assert(IsRuntime(OxrRuntimeType::Pico));
         static constexpr const FirmwareVersion PuiVersion{ major,minor,0 };
         return m_options->firmwareVersion < PuiVersion;
@@ -675,7 +663,7 @@ struct OpenXrProgram final : IOpenXrProgram {
             return !m_options->DisableLinearizeSrgb;
         }();
         m_graphicsPlugin->SetEnableLinearizeRGB(enableSRGBLinearization);
-#ifdef XR_USE_OXR_PICO_ANY_VERSION
+#ifdef XR_USE_OXR_PICO
         if (IsPrePicoPUI<5, 8>()) {
             m_graphicsPlugin->SetMaskModeParams({ 0.11f, 0.11f, 0.11f });
             m_graphicsPlugin->SetBlendModeParams(0.62f);
@@ -1100,7 +1088,7 @@ struct OpenXrProgram final : IOpenXrProgram {
                 reinterpret_cast<PFN_xrVoidFunction*>(&m_pfnRequestDisplayRefreshRateFB)));
         }
 
-#ifdef XR_USE_OXR_PICO_ANY_VERSION
+#ifdef XR_USE_OXR_PICO
         const auto GetPicoInstanceProcAddr = [this](const char* const name, auto& fn)
         {
             const XrResult result = xrGetInstanceProcAddr(m_instance, name, reinterpret_cast<PFN_xrVoidFunction*>(&fn));
@@ -1112,48 +1100,6 @@ struct OpenXrProgram final : IOpenXrProgram {
         if (IsExtEnabled("XR_PICO_boundary") || IsExtEnabled(XR_PICO_BOUNDARY_EXT_EXTENSION_NAME)) {
             Log::Write(Log::Level::Info, Fmt("%s enabled.", "XR_PICO_boundary(_ext)"));
             GetPicoInstanceProcAddr("xrInvokeFunctionsPICO", m_pfnInvokeFunctionsPICO);
-        }
-#endif
-#ifdef XR_USE_OXR_PICO_V4
-        if (IsExtEnabled(XR_PICO_ANDROID_CONTROLLER_FUNCTION_EXT_ENABLE_EXTENSION_NAME))
-        {
-            Log::Write(Log::Level::Info, Fmt("%s enabled.", XR_PICO_ANDROID_CONTROLLER_FUNCTION_EXT_ENABLE_EXTENSION_NAME));
-            GetPicoInstanceProcAddr("xrGetControllerConnectionStatePico", m_pfnGetControllerConnectionStatePico);
-            GetPicoInstanceProcAddr("xrSetEngineVersionPico", m_pfnSetEngineVersionPico);
-            GetPicoInstanceProcAddr("xrStartCVControllerThreadPico", m_pfnStartCVControllerThreadPico);
-            GetPicoInstanceProcAddr("xrStopCVControllerThreadPico", m_pfnStopCVControllerThreadPico);
-            GetPicoInstanceProcAddr("xrVibrateControllerPico", m_pfnXrVibrateControllerPico);
-        }
-
-        if (IsExtEnabled(XR_PICO_CONFIGS_EXT_EXTENSION_NAME))
-        {
-            Log::Write(Log::Level::Info, Fmt("%s enabled.", XR_PICO_CONFIGS_EXT_EXTENSION_NAME));
-            GetPicoInstanceProcAddr("xrGetConfigPICO", m_pfnGetConfigPICO);
-            GetPicoInstanceProcAddr("xrSetConfigPICO", m_pfnSetConfigPICO);
-        }
-
-        if (IsExtEnabled(XR_PICO_RESET_SENSOR_EXTENSION_NAME))
-        {
-            Log::Write(Log::Level::Info, Fmt("%s enabled.", XR_PICO_RESET_SENSOR_EXTENSION_NAME));
-            GetPicoInstanceProcAddr("xrResetSensorPICO", m_pfnResetSensorPICO);
-        }
-
-        if (IsExtEnabled(XR_PICO_SESSION_BEGIN_INFO_EXT_ENABLE_EXTENSION_NAME)) {
-            Log::Write(Log::Level::Info, Fmt("%s enabled.", XR_PICO_SESSION_BEGIN_INFO_EXT_ENABLE_EXTENSION_NAME));
-        }
-
-        if (IsExtEnabled(XR_PICO_SINGLEPASS_ENABLE_EXTENSION_NAME)) {
-            Log::Write(Log::Level::Info, Fmt("%s enabled.", XR_PICO_SINGLEPASS_ENABLE_EXTENSION_NAME));
-        }
-        
-        if (m_pfnSetConfigPICO) {
-            // const auto picoPlatformStr = std::to_string(Platform::NATIVE);
-            // m_pfnSetConfigPICO(m_session, ConfigsSetEXT::PLATFORM, const_cast<char*>(picoPlatformStr.c_str()));
-            // m_pfnSetConfigPICO(m_session, ConfigsSetEXT::ENABLE_SIX_DOF, "1");
-
-            const auto trackingOriginStr = std::to_string(TrackingOrigin::STAGELEVEL);
-            Log::Write(Log::Level::Info, Fmt("Setting Pico Tracking Origin: %s", trackingOriginStr.c_str()));
-            m_pfnSetConfigPICO(m_session, ConfigsSetEXT::TRACKING_ORIGIN, const_cast<char*>(trackingOriginStr.c_str()));
         }
 #endif
 
@@ -1802,7 +1748,7 @@ struct OpenXrProgram final : IOpenXrProgram {
             return true;
         if (m_pfnCreatePassthroughHTC != nullptr)
             return true;
-#ifdef XR_USE_OXR_PICO_ANY_VERSION
+#ifdef XR_USE_OXR_PICO
         if (m_pfnInvokeFunctionsPICO != nullptr)
             return true;
 #endif
@@ -1814,7 +1760,7 @@ struct OpenXrProgram final : IOpenXrProgram {
         return m_currentPTMode.load() != ALXR::PassthroughMode::None;
     }
 
-#ifdef XR_USE_OXR_PICO_ANY_VERSION
+#ifdef XR_USE_OXR_PICO
     bool SetPICOSeeThroughBackground(const bool enable) {
         if (m_session == XR_NULL_HANDLE ||
             m_pfnInvokeFunctionsPICO == nullptr ||
@@ -1879,7 +1825,7 @@ struct OpenXrProgram final : IOpenXrProgram {
             return result;
         }
 
-#ifdef XR_USE_OXR_PICO_ANY_VERSION
+#ifdef XR_USE_OXR_PICO
         if (IsPrePicoPUI<5,8>() && m_pfnInvokeFunctionsPICO) {
             const bool result = SetPICOSeeThroughBackground(true);
             Log::Write(Log::Level::Info, Fmt("[XR_PICO_boundary(_ext)] Passthrough (Layer) %s started/resumed.", result ? "successfully" : "failed to be"));
@@ -1929,7 +1875,7 @@ struct OpenXrProgram final : IOpenXrProgram {
             return result;
         }
 
-#ifdef XR_USE_OXR_PICO_ANY_VERSION
+#ifdef XR_USE_OXR_PICO
         if (IsPrePicoPUI<5, 8>() && m_pfnInvokeFunctionsPICO) {
             const bool result = SetPICOSeeThroughBackground(false);
             Log::Write(Log::Level::Info, Fmt("[XR_PICO_boundary(_ext)] Passthrough (Layer) %s paused/stopped.", result ? "successfully" : "failed to be"));
@@ -1987,25 +1933,6 @@ struct OpenXrProgram final : IOpenXrProgram {
                     Log::Write(Log::Level::Warning, "Failed to set GPU performance level");
             }
         }
-#ifdef XR_USE_OXR_PICO_V4
-        if (IsExtEnabled(XR_PICO_PERFORMANCE_SETTINGS_EXTENSION_NAME)) {
-            PFN_xrSetPerformanceLevelPICO setPerfLevel = nullptr;
-            const XrResult result = xrGetInstanceProcAddr
-            (
-                m_instance,
-                "xrSetPerformanceLevelPICO",
-                reinterpret_cast<PFN_xrVoidFunction*>(&setPerfLevel)
-            );
-            if (XR_FAILED(result) || setPerfLevel == nullptr) {
-                Log::Write(Log::Level::Warning, Fmt("Unable to load xr-extension function: %s, error-code: %d", "xrSetPerformanceLevelPICO", result));
-                return;
-            }
-            if (XR_FAILED(setPerfLevel(m_session, XR_PERF_SETTINGS_DOMAIN_CPU_EXT, XR_PERF_SETTINGS_LEVEL_SUSTAINED_HIGH_EXT)))
-                Log::Write(Log::Level::Warning, "Failed to set CPU performance level");
-            if (XR_FAILED(setPerfLevel(m_session, XR_PERF_SETTINGS_DOMAIN_GPU_EXT, XR_PERF_SETTINGS_LEVEL_BOOST_EXT)))
-                Log::Write(Log::Level::Warning, "Failed to set GPU performance level");
-        }
-#endif
     }
 
 #ifdef XR_USE_PLATFORM_ANDROID
@@ -2405,20 +2332,9 @@ struct OpenXrProgram final : IOpenXrProgram {
             }
             case XR_SESSION_STATE_READY: {
                 CHECK(m_session != XR_NULL_HANDLE);
-#ifdef XR_USE_OXR_PICO_V4
-                const XrSessionBeginInfoEXT sessionBeginInfoExt {
-                    .type = XR_TYPE_SESSION_BEGIN_INFO,
-                    .next = nullptr,
-                    .enableSinglePass = m_isMultiViewEnabled
-                };
-#endif
                 const XrSessionBeginInfo sessionBeginInfo{
                     .type = XR_TYPE_SESSION_BEGIN_INFO,
-#ifdef XR_USE_OXR_PICO_V4
-                    .next = &sessionBeginInfoExt,
-#else
                     .next = nullptr,
-#endif
                     .primaryViewConfigurationType = m_viewConfigType
                 };
                 XrResult result;
@@ -2770,21 +2686,9 @@ struct OpenXrProgram final : IOpenXrProgram {
         if (timeRender)
             LatencyCollector::Instance().rendered2(videoFrameDisplayTime);
 
-#ifdef XR_USE_OXR_PICO_V4
-        const XrFrameEndInfoEXT xrFrameEndInfoEXT {
-            .type = XR_TYPE_FRAME_END_INFO,
-            .next = nullptr,
-            .useHeadposeExt = 1,
-            .gsIndex = m_gsIndex.load()
-        };
-#endif
         const XrFrameEndInfo frameEndInfo{
             .type = XR_TYPE_FRAME_END_INFO,
-#ifdef XR_USE_OXR_PICO_V4
-            .next = &xrFrameEndInfoEXT,
-#else
             .next = &xrLocalDimmingFrameEndInfoMETA,
-#endif
             // TODO: Figure out why steamvr doesn't like using custom predicated display times!!!
             .displayTime = UseNetworkPredicatedDisplayTime() ?
                 predictedDisplayTime : frameState.predictedDisplayTime,
@@ -2812,16 +2716,9 @@ struct OpenXrProgram final : IOpenXrProgram {
     {
         if (predictedDisplayTime == 0)
             return false;
-#ifdef XR_USE_OXR_PICO_V4
-        XrViewStatePICOEXT xrViewStatePICOEXT {};
-#endif
         const XrViewLocateInfo viewLocateInfo{
             .type = XR_TYPE_VIEW_LOCATE_INFO,
-#ifdef XR_USE_OXR_PICO_V4
-            .next = &xrViewStatePICOEXT,
-#else
             .next = nullptr,
-#endif
             .viewConfigurationType = m_viewConfigType,
             .displayTime = predictedDisplayTime,
             .space = m_appSpace,
@@ -2834,9 +2731,6 @@ struct OpenXrProgram final : IOpenXrProgram {
         const XrResult res = xrLocateViews(m_session, &viewLocateInfo, &viewState, viewCapacityInput, &viewCountOutput, views);
         if (XR_FAILED(res))
           return false;
-#ifdef XR_USE_OXR_PICO_V4
-        m_gsIndex.store(xrViewStatePICOEXT.gsIndex);
-#endif
 
         if ((viewState.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT) == 0 ||
             (viewState.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT) == 0) {
@@ -3700,53 +3594,9 @@ struct OpenXrProgram final : IOpenXrProgram {
         return enqueueGuardianChanged(m_lastPredicatedDisplayTime);
     }
 
-#ifdef XR_USE_OXR_PICO_V4
-    enum PxrHmdDof : int
-    {
-        PXR_HMD_3DOF = 0,
-        PXR_HMD_6DOF
-    };
-    enum PxrControllerDof : int
-    {
-        PXR_CONTROLLER_3DOF = 0,
-        PXR_CONTROLLER_6DOF
-    };
-#endif
-    virtual inline void Resume() override
-    {
-#ifdef XR_USE_OXR_PICO_V4
-        if (m_instance == XR_NULL_HANDLE) {
-            Log::Write(Log::Level::Warning, "OpenXrProgram::Resume invoked but an openxr instance not yet set.");
-            return;
-        }
-        if (m_pfnSetEngineVersionPico) {
-            Log::Write(Log::Level::Info, "Setting pico engine version to 2.8.0.1");
-            m_pfnSetEngineVersionPico(m_instance, "2.8.0.1");
-        }
-        if (m_pfnStartCVControllerThreadPico) {
-            Log::Write(Log::Level::Info, "Starting pico cv controller thread");
-            m_pfnStartCVControllerThreadPico(m_instance, PXR_HMD_6DOF, PXR_CONTROLLER_6DOF);
-        }
-#endif
-    }
+    virtual inline void Resume() override {}
 
-    virtual inline void Pause() override
-    {
-#ifdef XR_USE_OXR_PICO_V4
-        if (m_instance == XR_NULL_HANDLE) {
-            Log::Write(Log::Level::Warning, "OpenXrProgram::Paused invoked but an openxr instance not yet set.");
-            return;
-        }
-        if (m_pfnSetEngineVersionPico) {
-            Log::Write(Log::Level::Info, "Setting pico engine version to 2.7.0.0");
-            m_pfnSetEngineVersionPico(m_instance, "2.7.0.0");
-        }
-        if (m_pfnStopCVControllerThreadPico) {
-            Log::Write(Log::Level::Info, "Stopping pico cv controller thread");
-            m_pfnStopCVControllerThreadPico(m_instance, PXR_HMD_6DOF, PXR_CONTROLLER_6DOF);
-        }
-#endif
-    }
+    virtual inline void Pause() override {}
 
     virtual inline std::shared_ptr<const IGraphicsPlugin> GetGraphicsPlugin() const override {
         return m_graphicsPlugin;
@@ -3854,18 +3704,7 @@ struct OpenXrProgram final : IOpenXrProgram {
     PFN_xrCreatePassthroughHTC  m_pfnCreatePassthroughHTC = nullptr;
     PFN_xrDestroyPassthroughHTC m_pfnDestroyPassthroughHTC = nullptr;
 
-#ifdef XR_USE_OXR_PICO_V4
-    mutable std::atomic<int>    m_gsIndex{ 0 };
-    PFN_xrResetSensorPICO       m_pfnResetSensorPICO = nullptr;
-    PFN_xrGetConfigPICO         m_pfnGetConfigPICO = nullptr;
-    PFN_xrSetConfigPICO         m_pfnSetConfigPICO = nullptr;
-    PFN_xrGetControllerConnectionStatePico m_pfnGetControllerConnectionStatePico = nullptr;
-    PFN_xrSetEngineVersionPico  m_pfnSetEngineVersionPico = nullptr;
-    PFN_xrStartCVControllerThreadPico m_pfnStartCVControllerThreadPico = nullptr;
-    PFN_xrStopCVControllerThreadPico  m_pfnStopCVControllerThreadPico = nullptr;
-    PFN_xrVibrateControllerPico m_pfnXrVibrateControllerPico = nullptr;
-#endif
-#ifdef XR_USE_OXR_PICO_ANY_VERSION
+#ifdef XR_USE_OXR_PICO
     PFN_xrInvokeFunctionsPICO m_pfnInvokeFunctionsPICO = nullptr;
 #endif
 

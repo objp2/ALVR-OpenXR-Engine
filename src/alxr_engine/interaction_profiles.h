@@ -84,22 +84,12 @@ constexpr inline const InteractionProfile EyeGazeProfile{
     .userEyesPath = ALXR::UserEyesExt
 };
 
-//#define XR_USE_OXR_PICO_ANY_VERSION
-
-#ifdef XR_USE_OXR_PICO_V4
-constexpr inline const std::size_t ProfileMapSize = 1;
-#else
 constexpr inline const std::size_t ProfileMapSize = 13;
-#endif
 constexpr inline const std::array<const InteractionProfile, ProfileMapSize> InteractionProfileMap{
     InteractionProfile {
         .boolMap {
             LeftMap { ButtonMap
-#ifdef XR_USE_OXR_PICO_V4
-                {ALVR_INPUT_SYSTEM_CLICK, BackClick},
-#else
                 {ALVR_INPUT_SYSTEM_CLICK, MenuClick},
-#endif
                 {ALVR_INPUT_GRIP_CLICK, SqueezeClick},
                 {ALVR_INPUT_X_CLICK, XClick},
                 {ALVR_INPUT_X_TOUCH, XTouch},
@@ -113,11 +103,7 @@ constexpr inline const std::array<const InteractionProfile, ProfileMapSize> Inte
                 MapEnd
             },
             RightMap { ButtonMap
-#ifdef XR_USE_OXR_PICO_V4
-                {ALVR_INPUT_SYSTEM_CLICK, BackClick},
-#else
                 {ALVR_INPUT_SYSTEM_CLICK, MenuClick},
-#endif
                 {ALVR_INPUT_GRIP_CLICK, SqueezeClick},
                 {ALVR_INPUT_A_CLICK, AClick},
                 {ALVR_INPUT_A_TOUCH, ATouch},
@@ -153,13 +139,8 @@ constexpr inline const std::array<const InteractionProfile, ProfileMapSize> Inte
                 MapEnd
             }
         },
-#ifdef XR_USE_OXR_PICO_V4
-        .path = "/interaction_profiles/pico/neo3_controller",
-        .extensionName = XR_PICO_ANDROID_CONTROLLER_FUNCTION_EXT_ENABLE_EXTENSION_NAME,
-#else
         .path = "/interaction_profiles/bytedance/pico_neo3_controller",
         .extensionName = XR_BD_CONTROLLER_INTERACTION_EXTENSION_NAME,
-#endif
         .quitPath = nullptr,
         .passthroughModes { PassthroughModeButtons {
             .blendMode {
@@ -172,7 +153,6 @@ constexpr inline const std::array<const InteractionProfile, ProfileMapSize> Inte
             }
         }}
     },
-#ifndef XR_USE_OXR_PICO_V4
     InteractionProfile {
         .boolMap {
             LeftMap { ButtonMap
@@ -710,7 +690,6 @@ constexpr inline const std::array<const InteractionProfile, ProfileMapSize> Inte
         .extensionName = XR_ML_ML2_CONTROLLER_INTERACTION_EXTENSION_NAME,
         .quitPath = nullptr,
     },
-#endif
 };
 }
 #endif

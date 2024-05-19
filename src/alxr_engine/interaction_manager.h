@@ -146,11 +146,6 @@ private:
     using EyeGazeInteractionPtr = std::unique_ptr<ALXR::EyeGazeInteraction>;
     EyeGazeInteractionPtr m_eyeGazeInteraction { nullptr };
 
-#ifdef XR_USE_OXR_PICO_V4
-    PFN_xrVibrateControllerPico m_pfnXrVibrateControllerPico { nullptr };
-#endif
-
-
     using InteractionProfilePtr     = std::atomic<const InteractionProfile*>;
     using InteractionProfilePtrList = std::array<InteractionProfilePtr, 2>;
     InteractionProfilePtrList m_activeProfiles{ nullptr, nullptr };
