@@ -527,7 +527,7 @@ struct OpenXrProgram final : IOpenXrProgram {
         { XR_EXT_LOCAL_FLOOR_EXTENSION_NAME, false },
         { XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME, false },
         { XR_MSFT_UNBOUNDED_REFERENCE_SPACE_EXTENSION_NAME, false },
-#ifndef XR_USE_OXR_OCULUS
+#if 0 // TODO: Replace this with XR_EXT_hand_interaction.
         // Quest v46 firmware update added support for this extension which breaks the suggested grip button bindings for touch (pro) profiles...
         // it is not enough to disable the suggested binding, the extension must be disabled completely.
         { XR_MSFT_HAND_INTERACTION_EXTENSION_NAME, false },

@@ -811,31 +811,8 @@ if(ANDROID)
 endif()
 
 set(OCULUS_OPENXR_MOBILE_SDK ${PROJECT_SOURCE_DIR}/src/external/oculus/OpenXR)
-string(TOLOWER ${CMAKE_BUILD_TYPE} BUILD_TYPE_LOWERED)
-if (${BUILD_TYPE_LOWERED} MATCHES ".*debug.*")
-    set(BUILD_TYPE_DIR Debug)
-else()
-    set(BUILD_TYPE_DIR Release)
-endif()
-if (USE_OCULUS_MOBILE_LOADER AND ANDROID)
-    message(NOTICE "Using Oculus Mobile OpenXR Loader.")
-    add_library(openxr_loader SHARED IMPORTED)
-    set_property(
-            TARGET
-            openxr_loader
-            PROPERTY
-            INTERFACE_INCLUDE_DIRECTORIES
-            ${OCULUS_OPENXR_MOBILE_SDK}
-    )
-    set_property(
-            TARGET
-            openxr_loader
-            PROPERTY
-            IMPORTED_LOCATION
-            ${OCULUS_OPENXR_MOBILE_SDK}/Libs/Android/${ANDROID_ABI}/${BUILD_TYPE_DIR}/libopenxr_loader.so
-    )
-    add_definitions(-DXR_USE_OXR_OCULUS)
-elseif (USE_PICO_MOBILE_LOADER AND ANDROID)
+
+if (USE_PICO_MOBILE_LOADER AND ANDROID)
     message(NOTICE "Using Pico 4/Neo 3 Mobile OpenXR (PUI >= 5.2.x) Loader.")
     set(PICO_OPENXR_MOBILE_SDK ${PROJECT_SOURCE_DIR}/src/external/pico)
     add_library(openxr_loader SHARED IMPORTED)
