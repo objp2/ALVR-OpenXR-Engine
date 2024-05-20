@@ -38,6 +38,7 @@ namespace ALXR::XRPaths {
 	constexpr inline const char* const ThumbstickClick = "thumbstick/click";
 	constexpr inline const char* const ThumbstickTouch = "thumbstick/touch";
 	constexpr inline const char* const ThumbrestTouch = "thumbrest/touch";
+	constexpr inline const char* const TrackpadPos = "trackpad";
 	constexpr inline const char* const TrackpadX = "trackpad/x";
 	constexpr inline const char* const TrackpadY = "trackpad/y";
 	constexpr inline const char* const TrackpadClick = "trackpad/click";
