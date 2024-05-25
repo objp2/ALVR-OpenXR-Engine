@@ -84,7 +84,7 @@ constexpr inline const InteractionProfile EyeGazeProfile{
     .userEyesPath = ALXR::UserEyesExt
 };
 
-constexpr inline const std::size_t ProfileMapSize = 13;
+constexpr inline const std::size_t ProfileMapSize = 11;
 constexpr inline const std::array<const InteractionProfile, ProfileMapSize> InteractionProfileMap{
     InteractionProfile {
         .boolMap {
@@ -641,55 +641,6 @@ constexpr inline const std::array<const InteractionProfile, ProfileMapSize> Inte
                 ALVR_BUTTON_FLAG(ALVR_INPUT_B_CLICK)
             }
         }}
-    },
-    InteractionProfile {
-        .scalarMap {
-            LeftMap { ButtonMap
-                {ALVR_INPUT_GRIP_VALUE, SelectValue},
-                {ALVR_INPUT_GRIP_VALUE, SqueezeValue},
-                MapEnd
-            },
-            RightMap { ButtonMap
-                {ALVR_INPUT_TRIGGER_VALUE, SelectValue},
-                {ALVR_INPUT_TRIGGER_VALUE, SqueezeValue},
-                MapEnd
-            },
-        },
-        .path = "/interaction_profiles/htc/hand_interaction",
-        .extensionName = XR_HTC_HAND_INTERACTION_EXTENSION_NAME,
-        .quitPath = nullptr,
-        .hapticPath = nullptr,
-        .userHandPaths = UserHandHTCPaths
-    },
-    InteractionProfile {
-        .boolMap {
-            LeftMap { ButtonMap
-                {ALVR_INPUT_GRIP_CLICK, SelectValue},
-                {ALVR_INPUT_GRIP_CLICK, SqueezeValue},
-                MapEnd
-            },
-            RightMap { ButtonMap
-                {ALVR_INPUT_TRIGGER_CLICK, SelectValue},
-                {ALVR_INPUT_TRIGGER_CLICK, SqueezeValue},
-                MapEnd
-            },
-        },
-        .scalarMap {
-            LeftMap { ButtonMap
-                {ALVR_INPUT_GRIP_VALUE, SelectValue},
-                {ALVR_INPUT_GRIP_VALUE, SqueezeValue},
-                MapEnd
-            },
-            RightMap { ButtonMap
-                {ALVR_INPUT_TRIGGER_VALUE, SelectValue},
-                {ALVR_INPUT_TRIGGER_VALUE, SqueezeValue},
-                MapEnd
-            },
-        },
-        .path = "/interaction_profiles/microsoft/hand_interaction",
-        .extensionName = XR_MSFT_HAND_INTERACTION_EXTENSION_NAME,
-        .quitPath = nullptr,
-        .hapticPath = nullptr
     },
     InteractionProfile{
         .boolMap {
