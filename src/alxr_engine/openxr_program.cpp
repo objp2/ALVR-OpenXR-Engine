@@ -515,29 +515,23 @@ struct OpenXrProgram final : IOpenXrProgram {
 
     using ExtensionMap = std::unordered_map<std::string_view, bool>;
     ExtensionMap m_availableSupportedExtMap = {
+        // KHR extensions
+        { XR_KHR_CONVERT_TIMESPEC_TIME_EXTENSION_NAME, false },
+#ifdef XR_USE_PLATFORM_WIN32
+        { XR_KHR_WIN32_CONVERT_PERFORMANCE_COUNTER_TIME_EXTENSION_NAME, false },
+#endif
+#ifdef XR_USE_PLATFORM_ANDROID
+        { XR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME, false },
+#endif
+        // EXT extensions
 #ifdef XR_USE_PLATFORM_UWP
 #pragma message ("UWP Extensions Enabled.")
         // Require XR_EXT_win32_appcontainer_compatible extension when building in UWP context.
         { XR_EXT_WIN32_APPCONTAINER_COMPATIBLE_EXTENSION_NAME, false },
 #endif
-#ifdef XR_USE_PLATFORM_ANDROID
-        { XR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME, false },
-#endif
         { XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME, false },
         { XR_EXT_LOCAL_FLOOR_EXTENSION_NAME, false },
         { XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME, false },
-        { XR_MSFT_UNBOUNDED_REFERENCE_SPACE_EXTENSION_NAME, false },
-
-        { XR_ML_ML2_CONTROLLER_INTERACTION_EXTENSION_NAME, false },
-        { XR_HTC_VIVE_COSMOS_CONTROLLER_INTERACTION_EXTENSION_NAME, false },
-        { XR_HTC_VIVE_FOCUS3_CONTROLLER_INTERACTION_EXTENSION_NAME, false },
-        { XR_KHR_CONVERT_TIMESPEC_TIME_EXTENSION_NAME, false },
-#ifdef XR_USE_PLATFORM_WIN32
-        { XR_KHR_WIN32_CONVERT_PERFORMANCE_COUNTER_TIME_EXTENSION_NAME, false },
-#endif
-        { XR_HTC_PASSTHROUGH_EXTENSION_NAME, false },
-        { XR_HTC_FACIAL_TRACKING_EXTENSION_NAME, false },
-
         { XR_EXT_HAND_TRACKING_EXTENSION_NAME, false },
 
         { XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME, false },
@@ -549,7 +543,15 @@ struct OpenXrProgram final : IOpenXrProgram {
         { XR_FB_FACE_TRACKING_EXTENSION_NAME, false },
         { XR_META_LOCAL_DIMMING_EXTENSION_NAME, false },
 
+        { XR_HTC_VIVE_COSMOS_CONTROLLER_INTERACTION_EXTENSION_NAME, false },
+        { XR_HTC_VIVE_FOCUS3_CONTROLLER_INTERACTION_EXTENSION_NAME, false },
+        { XR_HTC_PASSTHROUGH_EXTENSION_NAME, false },
+        { XR_HTC_FACIAL_TRACKING_EXTENSION_NAME, false },
+
+        { XR_ML_ML2_CONTROLLER_INTERACTION_EXTENSION_NAME, false },
         { XR_MND_HEADLESS_EXTENSION_NAME, false },
+        { XR_MSFT_UNBOUNDED_REFERENCE_SPACE_EXTENSION_NAME, false },
+
         { XR_BD_CONTROLLER_INTERACTION_EXTENSION_NAME, false },
 #ifdef XR_USE_OXR_PICO
         { XR_PICO_BOUNDARY_EXT_EXTENSION_NAME, false },
