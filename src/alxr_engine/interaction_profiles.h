@@ -557,20 +557,14 @@ constexpr inline const std::array<const InteractionProfile, ProfileMapSize> Inte
         .scalarMap {
             LeftMap { ButtonMap
                 {ALVR_INPUT_TRIGGER_VALUE, TriggerValue},
+                {ALVR_INPUT_JOYSTICK_X, ThumbstickX},
+                {ALVR_INPUT_JOYSTICK_Y, ThumbstickY},
                 MapEnd
             },
             RightMap { ButtonMap
                 {ALVR_INPUT_TRIGGER_VALUE, TriggerValue},
-                MapEnd
-            }
-        },
-        .vector2fMap {
-            LeftMap { ButtonMap
-                {ALVR_INPUT_JOYSTICK_X, ThumbstickPos},
-                MapEnd
-            },
-            RightMap { ButtonMap
-                {ALVR_INPUT_JOYSTICK_X, ThumbstickPos},
+                {ALVR_INPUT_JOYSTICK_X, ThumbstickX},
+                {ALVR_INPUT_JOYSTICK_Y, ThumbstickY},
                 MapEnd
             }
         },
@@ -610,21 +604,15 @@ constexpr inline const std::array<const InteractionProfile, ProfileMapSize> Inte
             LeftMap { ButtonMap
                 {ALVR_INPUT_GRIP_VALUE, SqueezeValue},
                 {ALVR_INPUT_TRIGGER_VALUE, TriggerValue},
+                {ALVR_INPUT_JOYSTICK_X, ThumbstickX},
+                {ALVR_INPUT_JOYSTICK_Y, ThumbstickY},
                 MapEnd
             },
             RightMap { ButtonMap
                 {ALVR_INPUT_GRIP_VALUE, SqueezeValue},
                 {ALVR_INPUT_TRIGGER_VALUE, TriggerValue},
-                MapEnd
-            }
-        },
-        .vector2fMap {
-            LeftMap { ButtonMap
-                {ALVR_INPUT_JOYSTICK_X, ThumbstickPos},
-                MapEnd
-            },
-            RightMap { ButtonMap
-                {ALVR_INPUT_JOYSTICK_X, ThumbstickPos},
+                {ALVR_INPUT_JOYSTICK_X, ThumbstickX},
+                {ALVR_INPUT_JOYSTICK_Y, ThumbstickY},
                 MapEnd
             }
         },
