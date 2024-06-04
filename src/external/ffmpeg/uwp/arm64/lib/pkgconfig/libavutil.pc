@@ -5,10 +5,10 @@ includedir=../../../build/Win10UWP/arm64/include
 
 Name: libavutil
 Description: FFmpeg utility library
-Version: 58.2.100
+Version: 59.8.100
 Requires: 
 Requires.private: 
 Conflicts:
 Libs: -L${libdir}  -lavutil 
-Libs.private: dxgi.lib d3d11.lib bcrypt.lib
+Libs.private: dxgi.lib d3d11.lib dxgi.lib d3d12.lib dxgi.lib bcrypt.lib
 Cflags: -I${includedir}
