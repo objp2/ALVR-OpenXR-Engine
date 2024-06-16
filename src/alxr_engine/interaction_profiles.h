@@ -510,12 +510,12 @@ constexpr inline const std::array<const InteractionProfile, ProfileMapSize> Inte
         .vector2fMap {
             LeftMap { ButtonMap
                 {ALVR_INPUT_JOYSTICK_X, ThumbstickPos},
-                //{ALVR_INPUT_TRACKPAD_X, TrackpadPos},
+                {ALVR_INPUT_TRACKPAD_X, TrackpadPos},
                 MapEnd
             },
             RightMap { ButtonMap
                 {ALVR_INPUT_JOYSTICK_X, ThumbstickPos},
-                //{ALVR_INPUT_TRACKPAD_X, TrackpadPos},
+                {ALVR_INPUT_TRACKPAD_X, TrackpadPos},
                 MapEnd
             }
         },

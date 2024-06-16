@@ -629,9 +629,11 @@ inline void InteractionManager::PollActions(InteractionManager::ControllerInfoLi
         {
             switch (input) {
             case ALVR_INPUT_JOYSTICK_X:
+                return c.joystickPosition.x;
             case ALVR_INPUT_TRACKPAD_X:
                 return c.trackpadPosition.x;
             case ALVR_INPUT_JOYSTICK_Y:
+                return c.joystickPosition.y;
             case ALVR_INPUT_TRACKPAD_Y:
                 return c.trackpadPosition.y;
             case ALVR_INPUT_TRIGGER_VALUE:
@@ -655,11 +657,12 @@ inline void InteractionManager::PollActions(InteractionManager::ControllerInfoLi
         constexpr static const auto GetVector2fRef = [](ControllerInfo& c, const ALVR_INPUT input) -> decltype(ControllerInfo::trackpadPosition)&
         {
             switch (input) {
-            case ALVR_INPUT_JOYSTICK_X:
-            case ALVR_INPUT_JOYSTICK_Y:
             case ALVR_INPUT_TRACKPAD_X:
             case ALVR_INPUT_TRACKPAD_Y:
-            default: return c.trackpadPosition;
+                return c.trackpadPosition;
+            case ALVR_INPUT_JOYSTICK_X:
+            case ALVR_INPUT_JOYSTICK_Y:
+            default: return c.joystickPosition;
             }
         };
         forEachButton(m_vector2fActionMap, activeProfile.vector2fMap[hand], [&](const ALVR_INPUT button)
