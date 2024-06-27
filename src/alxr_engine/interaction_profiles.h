@@ -99,7 +99,6 @@ constexpr inline const std::array<const InteractionProfile, ProfileMapSize> Inte
                 {ALVR_INPUT_JOYSTICK_TOUCH, ThumbstickTouch},
                 {ALVR_INPUT_TRIGGER_CLICK, TriggerClick},
                 {ALVR_INPUT_TRIGGER_TOUCH, TriggerTouch},
-                {ALVR_INPUT_THUMB_REST_TOUCH, ThumbrestTouch},
                 MapEnd
             },
             RightMap { ButtonMap
@@ -113,7 +112,6 @@ constexpr inline const std::array<const InteractionProfile, ProfileMapSize> Inte
                 {ALVR_INPUT_JOYSTICK_TOUCH, ThumbstickTouch},
                 {ALVR_INPUT_TRIGGER_CLICK, TriggerClick},
                 {ALVR_INPUT_TRIGGER_TOUCH, TriggerTouch},
-                {ALVR_INPUT_THUMB_REST_TOUCH, ThumbrestTouch},
                 MapEnd
             },
         },
@@ -166,7 +164,6 @@ constexpr inline const std::array<const InteractionProfile, ProfileMapSize> Inte
                 {ALVR_INPUT_JOYSTICK_TOUCH, ThumbstickTouch},
                 {ALVR_INPUT_TRIGGER_CLICK, TriggerClick},
                 {ALVR_INPUT_TRIGGER_TOUCH, TriggerTouch},
-                {ALVR_INPUT_THUMB_REST_TOUCH, ThumbrestTouch},
                 MapEnd
             },
             RightMap { ButtonMap
@@ -179,7 +176,6 @@ constexpr inline const std::array<const InteractionProfile, ProfileMapSize> Inte
                 {ALVR_INPUT_JOYSTICK_TOUCH, ThumbstickTouch},
                 {ALVR_INPUT_TRIGGER_CLICK, TriggerClick},
                 {ALVR_INPUT_TRIGGER_TOUCH, TriggerTouch},
-                {ALVR_INPUT_THUMB_REST_TOUCH, ThumbrestTouch},
                 MapEnd
             },
         },

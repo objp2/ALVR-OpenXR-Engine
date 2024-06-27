@@ -427,7 +427,9 @@ inline void InteractionManager::InitSuggestedBindings(IsProfileSupportedFn&& IsP
             .countSuggestedBindings = (uint32_t)bindings.size(),
             .suggestedBindings = bindings.data()
         };
-        CHECK_XRCMD(xrSuggestInteractionProfileBindings(m_instance, &suggestedBindings));
+        if (XR_FAILED(xrSuggestInteractionProfileBindings(m_instance, &suggestedBindings))) {
+            Log::Write(Log::Level::Warning, Fmt("Failed to make suggested bindings for profile \"%s\"", profile.path));
+        }
     }
 }
 

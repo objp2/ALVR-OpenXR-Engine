@@ -2820,13 +2820,6 @@ struct OpenXrProgram final : IOpenXrProgram {
                 const float scale = 0.1f * HandScale[hand];
                 cubes.push_back(Cube{ spaceLocation.pose, {scale, scale, scale} });
             }
-            else if (m_interactionManager->IsHandActive(hand)) {
-                // Tracking loss is expected when the hand is not active so only log a message
-                // if the hand is active.                    
-                constexpr static const char* const handName[] = { "left", "right" };
-                Log::Write(Log::Level::Verbose,
-                    Fmt("Unable to locate %s hand action space in app space", handName[hand]));
-            }
         }
         return cubes;
     }
