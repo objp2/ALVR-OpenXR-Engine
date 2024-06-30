@@ -3094,17 +3094,18 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
 
     int64_t SelectColorSwapchainFormat(const std::vector<int64_t>& runtimeFormats) const override {
         // List of supported color swapchain formats.
-        constexpr const int64_t SupportedColorSwapchainFormats[] = { VK_FORMAT_B8G8R8A8_SRGB , VK_FORMAT_R8G8B8A8_SRGB,
-                                                                     VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM };
-
-        auto swapchainFormatIt =
-            std::find_first_of(runtimeFormats.begin(), runtimeFormats.end(), std::begin(SupportedColorSwapchainFormats),
-                std::end(SupportedColorSwapchainFormats));
-        if (swapchainFormatIt == runtimeFormats.end()) {
-            THROW("No runtime swapchain format supported for color swapchain");
+        constexpr const int64_t SupportedColorSwapchainFormats[] = {
+            VK_FORMAT_B8G8R8A8_SRGB , VK_FORMAT_R8G8B8A8_SRGB,
+            VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM
+        };
+        for (const auto acceptedFormat : SupportedColorSwapchainFormats) {
+            const auto swapchainFormatIt = std::find(runtimeFormats.begin(), runtimeFormats.end(), acceptedFormat);
+            if (swapchainFormatIt != runtimeFormats.end()) {
+                assert(acceptedFormat == *swapchainFormatIt);
+                return acceptedFormat;
+            }
         }
-
-        return *swapchainFormatIt;
+        return 0;
     }
 
     const XrBaseInStructure* GetGraphicsBinding() const override {

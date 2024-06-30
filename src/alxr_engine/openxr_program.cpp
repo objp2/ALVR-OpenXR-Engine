@@ -2120,6 +2120,7 @@ struct OpenXrProgram final : IOpenXrProgram {
                                                 swapchainFormats.data()));
         CHECK(swapchainFormatCount == swapchainFormats.size());
         m_colorSwapchainFormat = m_graphicsPlugin->SelectColorSwapchainFormat(swapchainFormats);
+        CHECK_MSG(m_colorSwapchainFormat > 0, "No runtime swapchain format supported for color swapchain");
 
         // Print swapchain formats and the selected one.
         {
