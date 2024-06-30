@@ -20,21 +20,21 @@ MAKE_VEC2_SP_CONST(CRight,       20, 0.0, 0.0)
 vec2 TextureToEyeUV(const vec2 textureUV, const float isRightEye) {
     // flip distortion horizontally for right eye
     // left: x * 2; right: (1 - x) * 2
-    return vec2((textureUV.x + isRightEye * (1. - 2. * textureUV.x)) * 2., textureUV.y);
+    return vec2(fma(isRightEye, fma(-2., textureUV.x, 1.), textureUV.x) * 2., textureUV.y);
 }
 
 vec2 EyeToTextureUV(const vec2 eyeUV, const float isRightEye) {
     // left: x / 2; right 1 - (x / 2)
-    return vec2(eyeUV.x * 0.5 + isRightEye * (1. - eyeUV.x), eyeUV.y);
+    return vec2(fma(isRightEye, 1. - eyeUV.x, eyeUV.x * 0.5), eyeUV.y);
 }
 
 vec2 DecodeFoveationUV(const vec2 uv, const float isRightEye) {
     const vec2 eyeUV = TextureToEyeUV(uv, isRightEye);
 
     const vec2 center    = (eyeUV - C1) * EdgeRatio / C2;
-    const vec2 leftEdge  = (-BLeft + sqrt(BLeft * BLeft + 4. * ALeft * eyeUV)) / (2. * ALeft);
-    const vec2 rightEdge = (-BRight + sqrt(BRight * BRight - 4. * (CRight - ARight * eyeUV))) / (2. * ARight);
-    
+    const vec2 leftEdge  = (-BLeft  + sqrt(fma(BLeft, BLeft, 4. * ALeft * eyeUV))) / (2. * ALeft);
+    const vec2 rightEdge = (-BRight + sqrt(fma(BRight, BRight, -4. * fma(-ARight, eyeUV, CRight)))) / (2. * ARight);
+
     const vec2 uncompressedUV = mix(
         mix(center, leftEdge, lessThan(eyeUV, LoBound)),
         rightEdge, greaterThan(eyeUV, HiBound)
