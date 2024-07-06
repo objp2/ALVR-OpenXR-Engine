@@ -1316,12 +1316,21 @@ struct OpenXrProgram final : IOpenXrProgram {
 
         std::vector<XrFaceTrackingDataSource2FB> dataSources{};
         dataSources.reserve(2);
-        if (faceTrackingSystemProperties.supportsVisualFaceTracking == XR_TRUE)
+        if (faceTrackingSystemProperties.supportsVisualFaceTracking == XR_TRUE &&
+            (m_options == nullptr || m_options->IsFaceTrackingSourceEnabled(ALXR_FACE_TRACKING_DATA_SOURCE_VISUAL))) {
             dataSources.push_back(XR_FACE_TRACKING_DATA_SOURCE2_VISUAL_FB);
-        if (faceTrackingSystemProperties.supportsAudioFaceTracking == XR_TRUE)
+            Log::Write(Log::Level::Info, Fmt("Visual data sources selected for %s", XR_FB_FACE_TRACKING2_EXTENSION_NAME));
+        }
+        if (faceTrackingSystemProperties.supportsAudioFaceTracking == XR_TRUE &&
+            (m_options == nullptr || m_options->IsFaceTrackingSourceEnabled(ALXR_FACE_TRACKING_DATA_SOURCE_AUDIO))) {
             dataSources.push_back(XR_FACE_TRACKING_DATA_SOURCE2_AUDIO_FB);
-        
-        assert(dataSources.size() > 0);
+            Log::Write(Log::Level::Info, Fmt("Audio data sources selected for %s", XR_FB_FACE_TRACKING2_EXTENSION_NAME));
+        }
+
+        if (dataSources.empty()) {
+			Log::Write(Log::Level::Warning, "No face tracking data sources selected, face tracker will not be created.");
+			return false;
+		}
 
         faceTrackerFBV2_ = XR_NULL_HANDLE;
         const XrFaceTrackerCreateInfo2FB createInfo{

@@ -93,6 +93,12 @@ enum ALXRTrackingEnabledFlags : uint64_t {
     ALXR_TRACKING_ENABLED_ALL = ALXR_TRACKING_ENABLED_HANDS | ALXR_TRACKING_ENABLED_EYES | ALXR_TRACKING_ENABLED_FACE
 };
 
+enum ALXRFaceTrackingDataSourceFlags : uint32_t {
+    ALXR_FACE_TRACKING_DATA_SOURCE_VISUAL = (1u << 0),
+    ALXR_FACE_TRACKING_DATA_SOURCE_AUDIO  = (1u << 1),
+    ALXR_FACE_TRACKING_DATA_SOURCE_ANY    = ALXR_FACE_TRACKING_DATA_SOURCE_VISUAL | ALXR_FACE_TRACKING_DATA_SOURCE_AUDIO
+};
+
 enum class ALXRPassthroughMode : uint32_t {
     None = 0,
     BlendLayer,
@@ -139,6 +145,8 @@ typedef struct ALXRClientCtx
     ALXRDecoderType decoderType;
     ALXRColorSpace  displayColorSpace;
     ALXRPassthroughMode passthroughMode;
+
+    uint32_t faceTrackingDataSources;
 
     ALXRFacialExpressionType facialTracking;
     ALXREyeTrackingType eyeTracking;

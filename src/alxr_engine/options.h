@@ -121,6 +121,8 @@ struct Options {
 
     ALXRPassthroughMode PassthroughMode = ALXRPassthroughMode::None;
 
+    std::uint32_t FaceTrackingDataSources = ALXR_FACE_TRACKING_DATA_SOURCE_VISUAL;
+
     ALXRFacialExpressionType FacialTracking = ALXRFacialExpressionType::Auto;
     ALXREyeTrackingType      EyeTracking = ALXREyeTrackingType::Auto;
 
@@ -184,5 +186,9 @@ struct Options {
 
     inline bool EnableHeadless() const {
         return HeadlessSession || SimulateHeadless;
+    }
+
+    inline bool IsFaceTrackingSourceEnabled(const std::uint32_t source) const {
+        return (FaceTrackingDataSources & source) != 0;
     }
 };
