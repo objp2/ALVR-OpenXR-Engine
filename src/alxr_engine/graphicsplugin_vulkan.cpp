@@ -2244,8 +2244,47 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
         return list;
     }
 
+    static std::vector<std::string> GetAvailableInstanceExts() {
+        std::vector<std::string> results;
+
+        const auto add_extensions = [&](const char* layerName) {
+            uint32_t instanceExtensionCount = 0;
+            if (vkEnumerateInstanceExtensionProperties(layerName, &instanceExtensionCount, nullptr) != VK_SUCCESS) {
+                return;
+            }
+            std::vector<VkExtensionProperties> extensions{ instanceExtensionCount };
+            if (XR_FAILED(vkEnumerateInstanceExtensionProperties(layerName, &instanceExtensionCount, extensions.data()))) {
+                return;
+            }
+            for (const VkExtensionProperties& extension : extensions) {
+                results.push_back(extension.extensionName);
+            }
+        };
+
+        // add non-layer extensions (layerName==nullptr).
+        add_extensions(nullptr);
+
+        // add layers extensions.
+        {
+            uint32_t layerCount = 0;
+            if (vkEnumerateInstanceLayerProperties(&layerCount, nullptr) != VK_SUCCESS) {
+                goto lastStep;
+            }
+            std::vector<VkLayerProperties> availableLayers{ layerCount };
+            if (vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data()) != VK_SUCCESS) {
+                goto lastStep;
+            }
+            for (const VkLayerProperties& layer : availableLayers) {
+                add_extensions(layer.layerName);
+            }
+        }
+    lastStep:
+        std::sort(results.begin(), results.end());
+        return results;
+    }
+
     static const char* const GetValidationLayerName() {
-        uint32_t layerCount;
+        uint32_t layerCount = 0;
         vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
         std::vector<VkLayerProperties> availableLayers(layerCount);
         vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
@@ -2354,6 +2393,49 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
             std::memcpy(m_vkDeviceLUID.data(), vkPhysicalDeviceIDProperties.deviceLUID, VK_UUID_SIZE);
     }
 
+    void InitExtDebugUtils() {
+
+        auto pVkCreateDebugUtilsMessengerEXT =
+            (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(m_vkInstance, "vkCreateDebugUtilsMessengerEXT");
+        if (pVkCreateDebugUtilsMessengerEXT == nullptr) {
+            Log::Write(Log::Level::Warning, "Failed to load vkCreateDebugUtilsMessengerEXT");
+			return;
+		}
+
+        m_vkDestroyDebugUtilsMessengerEXT =
+            (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(m_vkInstance, "vkDestroyDebugUtilsMessengerEXT");
+        if (m_vkDestroyDebugUtilsMessengerEXT == nullptr) {
+            Log::Write(Log::Level::Warning, "Failed to load vkDestroyDebugUtilsMessengerEXT");
+            return;
+        }
+
+        const VkDebugUtilsMessengerCreateInfoEXT createInfo = {
+            .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+            .pNext = nullptr,
+#ifdef XR_ENABLE_VULKAN_VALIDATION_LAYER
+            .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
+                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+#else
+            .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+#endif
+            .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                           VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                           VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+            .pfnUserCallback = debugMessageThunk,
+            .pUserData = this
+        };
+
+        if (pVkCreateDebugUtilsMessengerEXT(m_vkInstance, &createInfo, nullptr, &m_vkDebugUtilsMessenger) != VK_SUCCESS) {
+            Log::Write(Log::Level::Warning, "Failed to create vulkan debug messenger");
+            m_vkDebugUtilsMessenger = VK_NULL_HANDLE;
+            return;
+        }
+        Log::Write(Log::Level::Verbose, "Vulkan debug utils initialized");
+    }
+
     void InitializeDevice(XrInstance instance, XrSystemId systemId, const XrEnvironmentBlendMode newMode) override {
         // Create the Vulkan device for the adapter associated with the system.
         // Extension function must be loaded by name
@@ -2370,18 +2452,26 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
         }
 #endif
 
-        const std::vector<const char*> extensions = {
-            "VK_EXT_debug_report",
+        std::vector<const char*> vkInstExtensions = {
             VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
         };
 
-        VkApplicationInfo appInfo{
+        const auto IsExtSupported = [availableInstanceExts = GetAvailableInstanceExts()](const char* extName) {
+            return std::find(availableInstanceExts.begin(), availableInstanceExts.end(), extName) != availableInstanceExts.end();
+        };
+        const bool isDebugUtilsSupported = IsExtSupported(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        if (isDebugUtilsSupported) {
+            vkInstExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        }
+
+        VkApplicationInfo appInfo = {
             .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
             .pNext = nullptr,
             .pApplicationName = "alxr-client",
-            .applicationVersion = 1,
+            .applicationVersion = VK_MAKE_VERSION(1,0,0),
             .pEngineName = "alxr-engine",
-            .engineVersion = 1,
+            .engineVersion = VK_MAKE_VERSION(1,0,0),
+            .apiVersion = 0,
         };
 #ifdef XR_USE_PLATFORM_ANDROID
 #pragma message ("Using Vulkan API version 1.1")
@@ -2412,8 +2502,8 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
             .pApplicationInfo = &appInfo,
             .enabledLayerCount = (uint32_t)layers.size(),
             .ppEnabledLayerNames = layers.empty() ? nullptr : layers.data(),
-            .enabledExtensionCount = (uint32_t)extensions.size(),
-            .ppEnabledExtensionNames = extensions.empty() ? nullptr : extensions.data()
+            .enabledExtensionCount = (uint32_t)vkInstExtensions.size(),
+            .ppEnabledExtensionNames = vkInstExtensions.empty() ? nullptr : vkInstExtensions.data()
         };
         const XrVulkanInstanceCreateInfoKHR createInfo{
             .type = XR_TYPE_VULKAN_INSTANCE_CREATE_INFO_KHR,
@@ -2427,23 +2517,9 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
         CHECK_XRCMD(CreateVulkanInstanceKHR(instance, &createInfo, &m_vkInstance, &err));
         CHECK_VKCMD(err);
 
-        vkCreateDebugReportCallbackEXT =
-            (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(m_vkInstance, "vkCreateDebugReportCallbackEXT");
-        vkDestroyDebugReportCallbackEXT =
-            (PFN_vkDestroyDebugReportCallbackEXT)vkGetInstanceProcAddr(m_vkInstance, "vkDestroyDebugReportCallbackEXT");
-
-        const VkDebugReportCallbackCreateInfoEXT debugInfo{
-            .sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT,
-            .pNext = nullptr,
-#ifdef XR_ENABLE_VULKAN_VALIDATION_LAYER
-            .flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT | VK_DEBUG_REPORT_INFORMATION_BIT_EXT | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT | VK_DEBUG_REPORT_DEBUG_BIT_EXT,
-#else
-            .flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT,
-#endif
-            .pfnCallback = debugReportThunk,
-            .pUserData = this
-        };
-        CHECK_VKCMD(vkCreateDebugReportCallbackEXT(m_vkInstance, &debugInfo, nullptr, &m_vkDebugReporter));
+        if (isDebugUtilsSupported) {
+            InitExtDebugUtils();
+        }
 
         const XrVulkanGraphicsDeviceGetInfoKHR deviceGetInfo{
             .type = XR_TYPE_VULKAN_GRAPHICS_DEVICE_GET_INFO_KHR,
@@ -4165,6 +4241,11 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
     
     virtual ~VulkanGraphicsPlugin() override {
         ClearImageDescriptorSets();
+
+        if (m_vkDebugUtilsMessenger != VK_NULL_HANDLE) {
+            if (m_vkDestroyDebugUtilsMessengerEXT)
+                m_vkDestroyDebugUtilsMessengerEXT(m_vkInstance, m_vkDebugUtilsMessenger, nullptr);
+        }
         Log::Write(Log::Level::Verbose, "VulkanGraphicsPlugin destroyed.");
     }
 
@@ -4434,105 +4515,115 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
 
 // END VIDEO STREAM DATA /////////////////////////////////////////////////////////////
 
-    PFN_vkCreateDebugReportCallbackEXT vkCreateDebugReportCallbackEXT{nullptr};
-    PFN_vkDestroyDebugReportCallbackEXT vkDestroyDebugReportCallbackEXT{nullptr};
-    VkDebugReportCallbackEXT m_vkDebugReporter{VK_NULL_HANDLE};
+    PFN_vkDestroyDebugUtilsMessengerEXT m_vkDestroyDebugUtilsMessengerEXT{nullptr};
+    VkDebugUtilsMessengerEXT m_vkDebugUtilsMessenger{VK_NULL_HANDLE};
 
-    VkBool32 debugReport(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objectType, uint64_t object, size_t /*location*/,
-                         int32_t /*messageCode*/, const char* pLayerPrefix, const char* pMessage) {
-        std::string flagNames;
+    static std::string vkObjectTypeToString(VkObjectType objectType) {
         std::string objName;
+#define LIST_OBJECT_TYPES(_)          \
+    _(UNKNOWN)                        \
+    _(INSTANCE)                       \
+    _(PHYSICAL_DEVICE)                \
+    _(DEVICE)                         \
+    _(QUEUE)                          \
+    _(SEMAPHORE)                      \
+    _(COMMAND_BUFFER)                 \
+    _(FENCE)                          \
+    _(DEVICE_MEMORY)                  \
+    _(BUFFER)                         \
+    _(IMAGE)                          \
+    _(EVENT)                          \
+    _(QUERY_POOL)                     \
+    _(BUFFER_VIEW)                    \
+    _(IMAGE_VIEW)                     \
+    _(SHADER_MODULE)                  \
+    _(PIPELINE_CACHE)                 \
+    _(PIPELINE_LAYOUT)                \
+    _(RENDER_PASS)                    \
+    _(PIPELINE)                       \
+    _(DESCRIPTOR_SET_LAYOUT)          \
+    _(SAMPLER)                        \
+    _(DESCRIPTOR_POOL)                \
+    _(DESCRIPTOR_SET)                 \
+    _(FRAMEBUFFER)                    \
+    _(COMMAND_POOL)                   \
+    _(SURFACE_KHR)                    \
+    _(SWAPCHAIN_KHR)                  \
+    _(DISPLAY_KHR)                    \
+    _(DISPLAY_MODE_KHR)               \
+    _(DESCRIPTOR_UPDATE_TEMPLATE_KHR) \
+    _(DEBUG_UTILS_MESSENGER_EXT)
+
+        switch (objectType) {
+        default: objName = "UNKNOWN-TYPE";
+            break;
+#define MK_OBJECT_TYPE_CASE(name) \
+    case VK_OBJECT_TYPE_##name:   \
+        objName = #name;          \
+        break;
+            LIST_OBJECT_TYPES(MK_OBJECT_TYPE_CASE)
+        }
+#undef LIST_OBJECT_TYPES
+#undef MK_OBJECT_TYPE_CASE
+        return objName;
+    }
+
+    VkBool32 debugMessage(
+        VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+        VkDebugUtilsMessageTypeFlagsEXT messageTypes,
+        const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData
+    ) {
+        std::string flagNames;
         Log::Level level = Log::Level::Error;
 
-        if ((flags & VK_DEBUG_REPORT_DEBUG_BIT_EXT) != 0u) {
+        if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) {
             flagNames += "DEBUG:";
             level = Log::Level::Verbose;
         }
-        if ((flags & VK_DEBUG_REPORT_INFORMATION_BIT_EXT) != 0u) {
+        if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
             flagNames += "INFO:";
             level = Log::Level::Info;
         }
-        if ((flags & VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT) != 0u) {
-            flagNames += "PERF:";
-            level = Log::Level::Warning;
-        }
-        if ((flags & VK_DEBUG_REPORT_WARNING_BIT_EXT) != 0u) {
+        if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
             flagNames += "WARN:";
             level = Log::Level::Warning;
         }
-        if ((flags & VK_DEBUG_REPORT_ERROR_BIT_EXT) != 0u) {
+        if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
             flagNames += "ERROR:";
             level = Log::Level::Error;
         }
-
-#define LIST_OBJECT_TYPES(_) \
-    _(UNKNOWN)               \
-    _(INSTANCE)              \
-    _(PHYSICAL_DEVICE)       \
-    _(DEVICE)                \
-    _(QUEUE)                 \
-    _(SEMAPHORE)             \
-    _(COMMAND_BUFFER)        \
-    _(FENCE)                 \
-    _(DEVICE_MEMORY)         \
-    _(BUFFER)                \
-    _(IMAGE)                 \
-    _(EVENT)                 \
-    _(QUERY_POOL)            \
-    _(BUFFER_VIEW)           \
-    _(IMAGE_VIEW)            \
-    _(SHADER_MODULE)         \
-    _(PIPELINE_CACHE)        \
-    _(PIPELINE_LAYOUT)       \
-    _(RENDER_PASS)           \
-    _(PIPELINE)              \
-    _(DESCRIPTOR_SET_LAYOUT) \
-    _(SAMPLER)               \
-    _(DESCRIPTOR_POOL)       \
-    _(DESCRIPTOR_SET)        \
-    _(FRAMEBUFFER)           \
-    _(COMMAND_POOL)          \
-    _(SURFACE_KHR)           \
-    _(SWAPCHAIN_KHR)         \
-    _(DISPLAY_KHR)           \
-    _(DISPLAY_MODE_KHR)
-
-        switch (objectType) {
-            default:
-#define MK_OBJECT_TYPE_CASE(name)                  \
-    case VK_DEBUG_REPORT_OBJECT_TYPE_##name##_EXT: \
-        objName = #name;                           \
-        break;
-                LIST_OBJECT_TYPES(MK_OBJECT_TYPE_CASE)
-
-#if VK_HEADER_VERSION >= 46
-                MK_OBJECT_TYPE_CASE(DESCRIPTOR_UPDATE_TEMPLATE_KHR)
-#endif
-#if VK_HEADER_VERSION >= 70
-                MK_OBJECT_TYPE_CASE(DEBUG_REPORT_CALLBACK_EXT)
-#endif
+        if (messageTypes & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) {
+            flagNames += "PERF:";
+            level = Log::Level::Warning;
         }
 
-        if ((objectType == VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT) && (strcmp(pLayerPrefix, "Loader Message") == 0) &&
-            (strncmp(pMessage, "Device Extension:", 17) == 0)) {
-            return VK_FALSE;
+        std::string objName;
+        std::uint64_t object = 0;
+        if (pCallbackData->objectCount > 0) {
+            const auto objectType = pCallbackData->pObjects[0].objectType;
+            // skip loader messages about device extensions
+            if ((objectType == VK_OBJECT_TYPE_INSTANCE) && (strncmp(pCallbackData->pMessage, "Device Extension:", 17) == 0)) {
+                return VK_FALSE;
+            }
+            objName = vkObjectTypeToString(objectType);
+            object = pCallbackData->pObjects[0].objectHandle;
+            if (pCallbackData->pObjects[0].pObjectName != nullptr) {
+                objName += " " + std::string(pCallbackData->pObjects[0].pObjectName);
+            }
         }
 
-        Log::Write(level, Fmt("%s (%s 0x%llx) [%s] %s", flagNames.c_str(), objName.c_str(), object, pLayerPrefix, pMessage));
-        if ((flags & VK_DEBUG_REPORT_ERROR_BIT_EXT) != 0u) {
-            return VK_FALSE;
-        }
-        if ((flags & VK_DEBUG_REPORT_WARNING_BIT_EXT) != 0u) {
-            return VK_FALSE;
-        }
+        Log::Write(level, Fmt("%s (%s 0x%llx) %s", flagNames.c_str(), objName.c_str(), object, pCallbackData->pMessage));
+
         return VK_FALSE;
     }
 
-    static VKAPI_ATTR VkBool32 VKAPI_CALL debugReportThunk(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objectType,
-                                                           uint64_t object, size_t location, int32_t messageCode,
-                                                           const char* pLayerPrefix, const char* pMessage, void* pUserData) {
-        return static_cast<VulkanGraphicsPlugin*>(pUserData)->debugReport(flags, objectType, object, location, messageCode,
-                                                                          pLayerPrefix, pMessage);
+    static VKAPI_ATTR VkBool32 VKAPI_CALL debugMessageThunk(
+        VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+        VkDebugUtilsMessageTypeFlagsEXT messageTypes,
+        const VkDebugUtilsMessengerCallbackDataEXT * pCallbackData,
+        void* pUserData
+    ) {
+        return static_cast<VulkanGraphicsPlugin*>(pUserData)->debugMessage(messageSeverity, messageTypes, pCallbackData);
     }
 
     virtual XrStructureType GetGraphicsBindingType() const { return XR_TYPE_GRAPHICS_BINDING_VULKAN2_KHR; }
