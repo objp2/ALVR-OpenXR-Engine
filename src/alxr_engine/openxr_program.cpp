@@ -344,9 +344,10 @@ struct OpenXrProgram final : IOpenXrProgram {
         LogLayersAndExtensions();
         
         const bool headlessRequested = m_options && m_options->EnableHeadless();
+        const bool enableTrueHeadless = headlessRequested && IsExtEnabled(XR_MND_HEADLESS_EXTENSION_NAME);
+
         auto& graphicsApi = options->GraphicsPlugin;
-        if (graphicsApi.empty() || graphicsApi == "auto" || 
-            (headlessRequested && !IsExtEnabled(XR_MND_HEADLESS_EXTENSION_NAME)))
+        if (!enableTrueHeadless && (graphicsApi.empty() || graphicsApi == "auto"))
         {
             Log::Write(Log::Level::Info, "Running auto graphics api selection.");
             constexpr const auto to_graphics_api_str = [](const ALXRGraphicsApi gapi) -> std::tuple<std::string_view, std::string_view>
@@ -371,9 +372,13 @@ struct OpenXrProgram final : IOpenXrProgram {
                 }
             }
         }
+
+        if (enableTrueHeadless) {
+            graphicsApi = "Headless";
+        }
         m_graphicsPlugin = CreateGraphicsPlugin(options, platformPlugin);
         
-        if (headlessRequested && IsExtEnabled(XR_MND_HEADLESS_EXTENSION_NAME)) {
+        if (enableTrueHeadless) {
             assert(graphicsApi == "Headless");
             Log::Write(Log::Level::Info, "Headless session selected, no graphics API has been setup.");
         } else {

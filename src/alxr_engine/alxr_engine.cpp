@@ -125,8 +125,6 @@ bool alxr_init(const ALXRClientCtx* rCtx, /*[out]*/ ALXRSystemProperties* system
             options->FaceTrackingDataSources = ctx.faceTrackingDataSources;
         if (options->GraphicsPlugin.empty())
             options->GraphicsPlugin = graphics_api_str(ctx.graphicsApi);
-        if (options->EnableHeadless())
-            options->GraphicsPlugin = "Headless";
 
         const auto platformData = std::make_shared<PlatformData>();
 #ifdef XR_USE_PLATFORM_ANDROID
