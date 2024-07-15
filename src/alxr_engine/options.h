@@ -6,6 +6,7 @@
 
 #include "pch.h"
 #include "alxr_ctypes.h"
+#include <filesystem>
 
 inline XrFormFactor GetXrFormFactor(const std::string& formFactorStr) {
     if (EqualsIgnoreCase(formFactorStr, "Hmd")) {
@@ -118,6 +119,8 @@ struct Options {
     std::string AppSpace{"Stage"};
 
     FirmwareVersion firmwareVersion{};
+
+    std::filesystem::path InternalDataPath{};
 
     ALXRPassthroughMode PassthroughMode = ALXRPassthroughMode::None;
 

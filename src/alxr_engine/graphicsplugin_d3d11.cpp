@@ -5,6 +5,7 @@
 #include "pch.h"
 #include "common.h"
 #include "geometry.h"
+#include "options.h"
 #include "graphicsplugin.h"
 
 #if defined(XR_USE_GRAPHICS_API_D3D11)
@@ -124,7 +125,12 @@ struct D3D11GraphicsPlugin final : public IGraphicsPlugin {
     };
     using CoreShaders = ALXR::CoreShaders<D3D11ShaderByteCode>;
 
-    D3D11GraphicsPlugin(const std::shared_ptr<Options>&, std::shared_ptr<IPlatformPlugin>){};
+    std::shared_ptr<Options> m_options{};
+
+    D3D11GraphicsPlugin(const std::shared_ptr<Options>& opts, std::shared_ptr<IPlatformPlugin>)
+    : m_options{ opts } {
+        assert(m_options != nullptr);
+    }
 
     std::vector<std::string> GetInstanceExtensions() const override { return {XR_KHR_D3D11_ENABLE_EXTENSION_NAME}; }
 
@@ -227,8 +233,8 @@ struct D3D11GraphicsPlugin final : public IGraphicsPlugin {
             m_isMultiViewSupported = options.VPAndRTArrayIndexFromAnyShaderFeedingRasterizer;
         }
 
-        const CoreShaders::Path smDir = m_isMultiViewSupported ? "SM5/multivew" : "SM5";
-        m_coreShaders = smDir;
+        CoreShaders::Path smDir = m_isMultiViewSupported ? "SM5/multivew" : "SM5";
+        m_coreShaders = { smDir, m_options->InternalDataPath };
 
         const auto& lobbyVS = m_coreShaders.lobbyVS;
         CHECK_HRCMD(m_device->CreateVertexShader(lobbyVS.data(), lobbyVS.size(), nullptr, m_vertexShader.ReleaseAndGetAddressOf()));

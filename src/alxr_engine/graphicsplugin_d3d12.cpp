@@ -4,6 +4,7 @@
 #include "pch.h"
 #include "common.h"
 #include "geometry.h"
+#include "options.h"
 #include "graphicsplugin.h"
 
 #if defined(XR_USE_GRAPHICS_API_D3D12)
@@ -331,7 +332,12 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
         TypeCount
     };
 
-    D3D12GraphicsPlugin(const std::shared_ptr<Options>&, std::shared_ptr<IPlatformPlugin>) {}
+    std::shared_ptr<Options> m_options{};
+
+    D3D12GraphicsPlugin(const std::shared_ptr<Options>& opts, std::shared_ptr<IPlatformPlugin>)
+    : m_options{ opts } {
+        assert(m_options != nullptr);
+    }
 
     inline ~D3D12GraphicsPlugin() override { CloseHandle(m_fenceEvent); }
 
@@ -381,7 +387,7 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
             Log::Write(Log::Level::Verbose, "Setting SM6 core (multi-view) shaders.");
             smDir = "multiview";
         }
-        m_coreShaders = smDir;
+        m_coreShaders = { smDir, m_options->InternalDataPath };
     }
 
     inline std::uint32_t GetViewProjectionBufferSize() const {

@@ -54,7 +54,7 @@ struct CoreShaders {
     ShaderByteCode  videoVS;
     VideoPShaderMap videoPSMap;
 
-    CoreShaders(const Path& shaderSubDir);
+    CoreShaders(const Path& shaderSubDir, const Path& rootPath = Path());
     inline CoreShaders() noexcept = default;
     inline CoreShaders(const CoreShaders&) noexcept = default;
     inline CoreShaders(CoreShaders&&) noexcept = default;
@@ -170,13 +170,24 @@ constexpr inline DXGI_FORMAT GetChromaVFormat(const DXGI_FORMAT yuvFmt) {
 }
 
 template < typename T >
-inline CoreShaders<T>::CoreShaders(const typename CoreShaders<T>::Path& shaderSubDir)
+inline CoreShaders<T>::CoreShaders(
+    const typename CoreShaders<T>::Path& shaderSubDir,
+    const typename CoreShaders<T>::Path& rootPath /*= Path()*/
+)
 {
-    const auto GetCSOPath = [&shaderSubDir](const Path& csoFile) -> Path
+    const auto GetCSOPath = [&shaderSubDir, &rootPath](const Path& csoFile) -> Path
     {
         using namespace std::filesystem;
-        if (exists(csoFile))
+        std::error_code ec;
+        if (exists(csoFile, ec) && !ec)
             return csoFile;
+
+        ec.clear();
+        if (!rootPath.empty() &&
+            exists(rootPath / csoFile, ec) &&
+            !ec) {
+            return (rootPath / csoFile);
+        }
         std::array<Path, 2> alternateDirs{
             Path{ "shaders" },
 #ifdef NDEBUG
@@ -186,8 +197,12 @@ inline CoreShaders<T>::CoreShaders(const typename CoreShaders<T>::Path& shaderSu
 #endif
         };
         for (auto& csoPath : alternateDirs) {
+            if (!rootPath.empty()) {
+                csoPath = rootPath / csoPath;
+            }
             csoPath /= shaderSubDir / csoFile;
-            if (exists(csoPath))
+            ec.clear();
+            if (exists(csoPath, ec) && !ec)
                 return csoPath;
         }
         return {};

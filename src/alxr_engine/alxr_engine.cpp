@@ -121,6 +121,15 @@ bool alxr_init(const ALXRClientCtx* rCtx, /*[out]*/ ALXRSystemProperties* system
         options->TrackingServerPortNo = static_cast<std::uint16_t>(ctx.trackingServerPortNo);
         options->SimulateHeadless = ctx.simulateHeadless;
         options->PassthroughMode = ctx.passthroughMode;
+        if (ctx.internalDataPath != nullptr) {
+            std::error_code ec;
+            options->InternalDataPath = ctx.internalDataPath;
+            if (!std::filesystem::exists(options->InternalDataPath, ec) || ec) {
+                options->InternalDataPath.clear();
+            }
+            auto internalDataPathStr = options->InternalDataPath.string();
+            Log::Write(Log::Level::Verbose, Fmt("InternalDataPath: %s", internalDataPathStr.c_str()));
+        }
         if (ctx.faceTrackingDataSources != 0)
             options->FaceTrackingDataSources = ctx.faceTrackingDataSources;
         if (options->GraphicsPlugin.empty())

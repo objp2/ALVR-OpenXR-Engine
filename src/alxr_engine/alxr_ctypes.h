@@ -145,6 +145,12 @@ typedef struct ALXRClientCtx
     ALXRDecoderType decoderType;
     ALXRColorSpace  displayColorSpace;
     ALXRPassthroughMode passthroughMode;
+    
+    //
+    // internalDataPath - Optional root path of data files, if null all paths will be relative, 
+    // for android builds this could be the same as ANativeActivity::internalDataPath
+    //
+    const char* internalDataPath;
 
     uint32_t faceTrackingDataSources;
 
