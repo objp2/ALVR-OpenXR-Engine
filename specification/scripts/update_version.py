@@ -31,18 +31,12 @@ if __name__ == "__main__":
     print('Replacing version lines in the registry')
     for line in fileinput.input('registry/xr.xml', inplace=True):
         printed = False
-        if 'XR_CURRENT_API_VERSION' in line:
+        if '<name>XR_CURRENT_API_VERSION</name>' in line:
             if 'XR_MAKE_VERSION' in line:
                 printed = True
                 print('#define <name>XR_CURRENT_API_VERSION</name> <type>XR_MAKE_VERSION</type>(%s, %s, %s)</type>' % spec_version)
-            if 'type name' in line:
-                printed = True
-                print('            <type name="XR_CURRENT_API_VERSION"/>')
-        elif 'XR_VERSION_' in line and 'feature' in line and 'number' in line and 'openxr' in line:
-            printed = True
-            print('    <feature api="openxr" name="XR_VERSION_%s_%s" number="%s.%s">' % (major_version, minor_version, major_version, minor_version))
         if not printed:
-            print("%s" % (line), end='')
+            print(f"{line}", end='')
 
     # Now update the version in the appropriate places in the
     # specification make file (Makefile).
@@ -54,4 +48,4 @@ if __name__ == "__main__":
             printed = True
             print('SPECREVISION = %s.%s.%s' % spec_version)
         if not printed:
-            print("%s" % (line), end='')
+            print(f"{line}", end='')

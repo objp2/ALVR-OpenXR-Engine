@@ -10,8 +10,7 @@ jobs:
   clang-format:
     runs-on: ubuntu-latest
     container:
-      # 20230614
-      image: khronosgroup/docker-images:openxr-sdk@sha256:fbc5fe29a0787cccc8f66bd9bd03c9dbddf591c7d1aea673108c38c908b280f5
+      image: khronosgroup/docker-images:openxr.20240805@sha256:05e900737234daf09d29a1c525a017ea8cc54a0d1f808569488e9ae6018053f2
 
     steps:
       - uses: actions/checkout@v4

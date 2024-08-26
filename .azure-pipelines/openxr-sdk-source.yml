@@ -21,13 +21,12 @@ stages:
       - job: loader_docs
         pool:
           vmImage: "ubuntu-latest"
-        container: khronosgroup/docker-images:openxr.20230323
-        # container: khronosgroup/docker-images@sha256:091f1d988744f0b5149126d1f4bdba342b72c01dc90c2d06d4a61738bec5521c
+        container: khronosgroup/docker-images:openxr.20240805@sha256:05e900737234daf09d29a1c525a017ea8cc54a0d1f808569488e9ae6018053f2
         steps:
           - script: make loader
             workingDirectory: specification
             displayName: Build loader document
-          - publish: $(System.DefaultWorkingDirectory)/specification/generated/out/1.0/loader.html
+          - publish: $(System.DefaultWorkingDirectory)/specification/generated/out/1.1/loader.html
             artifact: LoaderDoc
 
   - stage: Generate
@@ -35,8 +34,7 @@ stages:
       - job: archive
         pool:
           vmImage: "ubuntu-latest"
-        container: khronosgroup/docker-images:openxr.20230323
-        # container: khronosgroup/docker-images@sha256:091f1d988744f0b5149126d1f4bdba342b72c01dc90c2d06d4a61738bec5521c
+        container: khronosgroup/docker-images:openxr.20240805@sha256:05e900737234daf09d29a1c525a017ea8cc54a0d1f808569488e9ae6018053f2
         steps:
           - script: make loader
             workingDirectory: specification
@@ -64,7 +62,7 @@ stages:
               presentationBackend: wayland
         pool:
           vmImage: "ubuntu-latest"
-        container: khronosgroup/docker-images:openxr-pregenerated-sdk.20230323
+        container: khronosgroup/docker-images:openxr-pregenerated-sdk.20240412@sha256:0006d0994219477d460953f0eda1fa6053f770c68da23b190be7c0d067f078b5
         # container: sha256:845e19e59f22c29fedc33dcaa4f3c5f8aa44e367283ef955c7549239cf9a46d2
         steps:
           - task: DownloadPipelineArtifact@2

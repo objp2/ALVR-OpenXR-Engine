@@ -732,7 +732,7 @@ struct OpenXrProgram final : IOpenXrProgram {
             .applicationInfo {
                 .applicationVersion = 1,
                 .engineVersion = 1,
-                .apiVersion = XR_CURRENT_API_VERSION
+                .apiVersion = XR_API_VERSION_1_0
             },
             .enabledApiLayerCount = 0,
             .enabledApiLayerNames = nullptr,

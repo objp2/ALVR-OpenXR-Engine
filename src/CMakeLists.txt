@@ -37,10 +37,12 @@ set(XR_USE_GRAPHICS_API_OPENGL_ES FALSE)
 set(XR_USE_GRAPHICS_API_VULKAN FALSE)
 set(XR_USE_GRAPHICS_API_D3D11 FALSE)
 set(XR_USE_GRAPHICS_API_D3D12 FALSE)
+set(XR_USE_GRAPHICS_API_METAL FALSE)
 
 set(OPENGLES_INCOMPATIBLE TRUE)
 set(OPENGL_INCOMPATIBLE FALSE)
 set(VULKAN_INCOMPATIBLE FALSE)
+set(METAL_INCOMPATIBLE TRUE)
 
 
 set(XR_TARGET_CPU_ARCH ${CMAKE_SYSTEM_PROCESSOR})
@@ -66,7 +68,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "WindowsStore"
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     set(OPENGL_INCOMPATIBLE TRUE)
     message(STATUS "OpenGL disabled as no bindings exist for OpenGL on Darwin")
-
+    set(METAL_INCOMPATIBLE FALSE)
 elseif(ANDROID)
     set(OPENGL_INCOMPATIBLE TRUE)
     find_path(
@@ -120,6 +122,19 @@ if(NOT VULKAN_INCOMPATIBLE)
         message(STATUS "Enabling Vulkan support")
     elseif(BUILD_ALL_EXTENSIONS)
         message(FATAL_ERROR "Vulkan headers not found")
+    endif()
+endif()
+
+if(NOT METAL_INCOMPATIBLE)
+    find_package(MetalTools)
+    if(MetalTools_FOUND)
+        set(XR_USE_GRAPHICS_API_METAL TRUE)
+        add_definitions(-DXR_USE_GRAPHICS_API_METAL)
+        message(STATUS "Enabling Metal support")
+    elseif(BUILD_ALL_EXTENSIONS)
+        message(FATAL_ERROR "Metal not found - full Xcode install required")
+    else()
+        message(STATUS "Metal not found - full Xcode install required")
     endif()
 endif()
 
@@ -843,7 +858,10 @@ endif()
 
 add_subdirectory(alxr_engine)
 
+if(BUILD_TESTS OR BUILD_CONFORMANCE_TESTS)
+    add_subdirectory(external/catch2)
+endif()
+
 if(BUILD_CONFORMANCE_TESTS)
     add_subdirectory(conformance)
-    add_subdirectory(external/catch2)
 endif()

@@ -154,6 +154,7 @@ getSDKSourceFilenames() {
         checkCodespell \
         CMakeLists.txt \
         format_file.sh \
+        open-in-docker.sh \
         LICENSE \
         openxr-codespell.exclude \
         runClangFormat.sh \
@@ -207,6 +208,8 @@ getSDKSourceFilenames() {
         src/external/android-jni-wrappers \
         src/external/jnipp \
         src/external/jsoncpp \
+        src/external/catch2 \
+        src/external/metal-cpp \
         src/loader \
         src/scripts \
         src/tests \
