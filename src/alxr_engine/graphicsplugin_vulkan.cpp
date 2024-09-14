@@ -1691,6 +1691,10 @@ struct RenderTarget {
 
         // Create depth image view
         if (depthImage != VK_NULL_HANDLE) {
+            constexpr const VkImageAspectFlags DepthOnlyAspectMask{ VK_IMAGE_ASPECT_DEPTH_BIT };
+            constexpr const VkImageAspectFlags DepthStencialAspectMask{ VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT };
+            const VkImageAspectFlags aspectMask = renderPass.enableVisibilityMask ? DepthStencialAspectMask : DepthOnlyAspectMask;
+
             const VkImageViewCreateInfo depthViewInfo {
                 .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
                 .pNext = nullptr,
@@ -1705,7 +1709,7 @@ struct RenderTarget {
                     .a = VK_COMPONENT_SWIZZLE_A
                 },
                 .subresourceRange {
-                    .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
+                    .aspectMask = aspectMask,
                     .baseMipLevel = 0,
                     .levelCount = 1,
                     .baseArrayLayer = 0,
@@ -2087,6 +2091,7 @@ private:
 struct DepthBuffer {
     VkDeviceMemory depthMemory{VK_NULL_HANDLE};
     VkImage depthImage{VK_NULL_HANDLE};
+    bool hasStencil{false};
 
     DepthBuffer() = default;
 
@@ -2128,9 +2133,10 @@ struct DepthBuffer {
         return *this;
     }
 
-    void Create(VkDevice device, MemoryAllocator* memAllocator, VkFormat depthFormat,
+    void Create(VkDevice device, MemoryAllocator* memAllocator, VkFormat depthFormat, bool stencilEnable,
                 const XrSwapchainCreateInfo& swapchainCreateInfo) {
         m_vkDevice = device;
+        hasStencil = stencilEnable;
         assert(swapchainCreateInfo.arraySize > 0);
         const VkExtent2D size = {swapchainCreateInfo.width, swapchainCreateInfo.height};
         // Create a D32 depthbuffer
@@ -2164,6 +2170,11 @@ struct DepthBuffer {
     void TransitionLayout(CmdBuffer* cmdBuffer, VkImageLayout newLayout) {
         if (newLayout == m_vkLayout)
             return;
+        
+        constexpr const VkImageAspectFlags DepthOnlyAspectMask{ VK_IMAGE_ASPECT_DEPTH_BIT };
+        constexpr const VkImageAspectFlags DepthStencialAspectMask{ VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT };
+        const VkImageAspectFlags aspectMask = hasStencil ? DepthStencialAspectMask : DepthOnlyAspectMask;
+
         const VkImageMemoryBarrier depthBarrier {
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
             .pNext = nullptr,
@@ -2172,7 +2183,7 @@ struct DepthBuffer {
             .oldLayout = m_vkLayout,
             .newLayout = newLayout,
             .image = depthImage,
-            .subresourceRange { VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1},
+            .subresourceRange { aspectMask, 0, 1, 0, 1},
         };
         vkCmdPipelineBarrier(cmdBuffer->buf, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, 0, 0, nullptr,
                              0, nullptr, 1, &depthBarrier);
@@ -2220,7 +2231,7 @@ struct SwapchainImageContext {
         const VkFormat depthFormat = enableVisibilityMask ? VK_FORMAT_D32_SFLOAT_S8_UINT : VK_FORMAT_D32_SFLOAT;
         // XXX handle swapchainCreateInfo.sampleCount
         
-        depthBuffer.Create(m_vkDevice, memAllocator, depthFormat, swapchainCreateInfo);
+        depthBuffer.Create(m_vkDevice, memAllocator, depthFormat, enableVisibilityMask, swapchainCreateInfo);
         rp.Create(m_vkDevice, colorFormat, depthFormat, arraySize, enableVisibilityMask);
         pipe.Create(m_vkDevice, size, layout, rp, sp, &vb);
 
@@ -3104,7 +3115,7 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
     };
     using DepthStencilViewList = std::array<DepthStencilView, 2>;
     DepthStencilViewList CreateDepthStencilViewsFromImageArray(
-        std::span<XrSwapchainImageBaseHeader* const> swapchainImages,
+        std::span<const XrSwapchainImageBaseHeader* const> swapchainImages,
         VkRenderPass renderPass
     ) {
         assert(swapchainImages.size() > 0 && swapchainImages.size() < 3);
@@ -3165,14 +3176,9 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
     }
 
     inline bool RenderVisibilityMaskPass(
-        std::span<XrSwapchainImageBaseHeader* const> swapchainImages,
+        std::span<const XrSwapchainImageBaseHeader* const> swapchainImages,
         const std::array<XrCompositionLayerProjectionView,2>& layerViews
     ) {
-        //while (!::IsDebuggerPresent()) {
-        //    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        //}
-        //__debugbreak();
-
         if (!m_visibilityMask.isDirty)
             return true;
 
@@ -3250,9 +3256,7 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
         const std::vector<Cube>& cubes
     ) override {
         assert(m_isMultiViewSupported);
-        std::array<XrSwapchainImageBaseHeader*,1> swapchainImages = {
-            const_cast<XrSwapchainImageBaseHeader*>(swapchainImage)
-        };
+        std::array<const XrSwapchainImageBaseHeader*,1> swapchainImages = {swapchainImage};
         RenderVisibilityMaskPass(swapchainImages, layerViews);
 
         RenderViewImpl([&, this]() {
@@ -3309,7 +3313,7 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
     void RenderView
     (
         const std::array<XrCompositionLayerProjectionView, 2>& layerViews,
-        const std::array<XrSwapchainImageBaseHeader*, 2>& swapchainImages,
+        const std::array<const XrSwapchainImageBaseHeader*, 2>& swapchainImages,
         const std::int64_t /*swapchainFormat*/, const PassthroughMode newMode,
         const std::vector<Cube>& cubes
     ) override {
@@ -4368,9 +4372,7 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
     ) override
     {
         assert(m_isMultiViewSupported);
-        std::array<XrSwapchainImageBaseHeader*, 1> swapchainImages = {
-            const_cast<XrSwapchainImageBaseHeader*>(swapchainImage)
-        };
+        std::array<const XrSwapchainImageBaseHeader*, 1> swapchainImages = { swapchainImage };
         RenderVisibilityMaskPass(swapchainImages, layerViews);
 
         RenderViewImpl([&, this]() {
@@ -4417,12 +4419,12 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
     virtual void RenderVideoView
     (
         const std::array<XrCompositionLayerProjectionView, 2>& layerViews,
-        const std::array<XrSwapchainImageBaseHeader*, 2>& swapchainImages,
+        const std::array<const XrSwapchainImageBaseHeader*, 2>& swapchainImages,
         const std::int64_t /*swapchainFormat*/,
         const PassthroughMode mode /*= PassthroughMode::None*/
     ) override
     {
-        RenderVisibilityMaskPass(swapchainImages, layerViews);
+        RenderVisibilityMaskPass(std::span{ swapchainImages }, layerViews);
 
         RenderViewImpl([&, this]() {
             for (std::size_t viewID = 0; viewID < swapchainImages.size(); ++viewID) {
@@ -4683,7 +4685,7 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
             .depthClampEnable = VK_FALSE,
             .rasterizerDiscardEnable = VK_FALSE,
             .polygonMode = VK_POLYGON_MODE_FILL,
-            .cullMode = VK_CULL_MODE_BACK_BIT,
+            .cullMode = VK_CULL_MODE_NONE,
             .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
             .lineWidth = 1.0f,                        
         };

@@ -73,7 +73,7 @@ struct IGraphicsPlugin {
     virtual void RenderView
     (
         const std::array<XrCompositionLayerProjectionView,2>& layerViews,
-        const std::array<XrSwapchainImageBaseHeader*,2>& swapchainImages,
+        const std::array<const XrSwapchainImageBaseHeader*,2>& swapchainImages,
         const std::int64_t swapchainFormat,
         const PassthroughMode /*newMode*/,
         const std::vector<Cube>& cubes
@@ -85,7 +85,7 @@ struct IGraphicsPlugin {
     virtual void RenderVideoView
     (
         const std::array<XrCompositionLayerProjectionView, 2>& /*layerViews*/,
-        const std::array<XrSwapchainImageBaseHeader*, 2>& /*swapchainImages*/,
+        const std::array<const XrSwapchainImageBaseHeader*, 2>& /*swapchainImages*/,
         const std::int64_t /*swapchainFormat*/,
         const PassthroughMode /*newMode*/ = PassthroughMode::None
     ) {}
@@ -164,7 +164,7 @@ struct IGraphicsPlugin {
 
     virtual void SetBlendModeParams(const float /*alpha*/ = 0.6f) {}
 
-    virtual bool SetVisibilityMask(uint32_t /*viewIndex*/, const struct XrVisibilityMaskKHR& /*visibilityMask*/) { return false; }
+    virtual bool SetVisibilityMask(uint32_t /*viewIndex*/, const struct XrVisibilityMaskKHR& /*visibilityMask*/) { return true; }
 };
 
 // Create a graphics plugin for the graphics API specified in the options.

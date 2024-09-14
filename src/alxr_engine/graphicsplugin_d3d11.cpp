@@ -13,6 +13,7 @@
 #include <array>
 #include <vector>
 #include <atomic>
+#include <span>
 
 #include "xr_eigen.h"
 #include <DirectXColors.h>
@@ -271,6 +272,10 @@ struct D3D11GraphicsPlugin final : public IGraphicsPlugin {
         const CD3D11_BUFFER_DESC indexBufferDesc(sizeof(Geometry::c_cubeIndices), D3D11_BIND_INDEX_BUFFER);
         CHECK_HRCMD(m_device->CreateBuffer(&indexBufferDesc, &indexBufferData, m_cubeIndexBuffer.ReleaseAndGetAddressOf()));
 
+        const CD3D11_RASTERIZER_DESC rasterizerDesc{ D3D11_DEFAULT };
+        assert(rasterizerDesc.CullMode == D3D11_CULL_BACK);
+        CHECK_HRCMD(m_device->CreateRasterizerState(&rasterizerDesc, cullState.ReleaseAndGetAddressOf()));
+
         InitializeVideoRenderResources();
     }
 
@@ -334,10 +339,10 @@ struct D3D11GraphicsPlugin final : public IGraphicsPlugin {
             .Height = colorDesc.Height,
             .MipLevels = 1,
             .ArraySize = colorDesc.ArraySize,            
-            .Format = DXGI_FORMAT_R32_TYPELESS,
+            .Format = DXGI_FORMAT_D32_FLOAT_S8X24_UINT,
             .SampleDesc {.Count = 1,.Quality = 0},
             .Usage = D3D11_USAGE_DEFAULT,
-            .BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_DEPTH_STENCIL,
+            .BindFlags = /*D3D11_BIND_SHADER_RESOURCE |*/ D3D11_BIND_DEPTH_STENCIL,
             .CPUAccessFlags = 0,
             .MiscFlags = 0
         };
@@ -346,9 +351,11 @@ struct D3D11GraphicsPlugin final : public IGraphicsPlugin {
 
         // Create and cache the depth stencil view.
         ComPtr<ID3D11DepthStencilView> depthStencilView;
-        const CD3D11_DEPTH_STENCIL_VIEW_DESC depthStencilViewDesc(viewDimension, DXGI_FORMAT_D32_FLOAT);
+        const CD3D11_DEPTH_STENCIL_VIEW_DESC depthStencilViewDesc(viewDimension, DXGI_FORMAT_D32_FLOAT_S8X24_UINT);
         CHECK_HRCMD(m_device->CreateDepthStencilView(depthTexture.Get(), &depthStencilViewDesc, depthStencilView.GetAddressOf()));
         depthBufferIt = m_colorToDepthMap.insert(std::make_pair(colorTexture, depthStencilView)).first;
+
+        m_visibilityMaskState.isDirty = true;
 
         return depthStencilView;
     }
@@ -359,17 +366,143 @@ struct D3D11GraphicsPlugin final : public IGraphicsPlugin {
         m_swapchainImageBuffers.clear();
     }
 
+    struct DepthStencilView final {
+        ComPtr<ID3D11DepthStencilView> depthStencilView{};
+        ComPtr<ID3D11RenderTargetView> renderTargetView{};
+    };
+    using DepthStencilViewList = std::array<DepthStencilView, 2>;
+    DepthStencilViewList CreateDepthStencilViewsFromImageArray(
+        std::span<const XrSwapchainImageBaseHeader* const> swapchainImages,
+        const int64_t swapchainFormat
+    ) {
+        assert(swapchainImages.size() > 0 && swapchainImages.size() < 3);
+        const bool isMultiView = swapchainImages.size() == 1;
+        const D3D11_DSV_DIMENSION viewDimension = isMultiView ?
+            D3D11_DSV_DIMENSION_TEXTURE2DARRAY : D3D11_DSV_DIMENSION_TEXTURE2D;
+
+        DepthStencilViewList depthStencilViews = {};
+        for (size_t viewIdx = 0; viewIdx < depthStencilViews.size(); ++viewIdx) {
+            auto swapchainImage = swapchainImages[isMultiView ? 0 : viewIdx];
+            if (swapchainImage == nullptr)
+                continue;
+            ComPtr<ID3D11Texture2D> colorTexture = reinterpret_cast<const XrSwapchainImageD3D11KHR*>(swapchainImage)->texture;
+            
+            auto depthStencilView = GetDepthStencilView(colorTexture.Get(), viewDimension);
+            if (!isMultiView) {
+
+                ComPtr<ID3D11RenderTargetView> renderTargetView;
+                const CD3D11_RENDER_TARGET_VIEW_DESC renderTargetViewDesc(D3D11_RTV_DIMENSION_TEXTURE2D, (DXGI_FORMAT)swapchainFormat);
+                if (m_device->CreateRenderTargetView(colorTexture.Get(), &renderTargetViewDesc,
+                                                     renderTargetView.ReleaseAndGetAddressOf())) {
+                    Log::Write(Log::Level::Error, "Failed to create depth stencil slice-view for per view swapchain.");
+                    return {};
+                }
+                depthStencilViews[viewIdx] = {depthStencilView, renderTargetView};
+            } else {
+                ComPtr<ID3D11Resource> resource {};
+                depthStencilView->GetResource(resource.ReleaseAndGetAddressOf());
+
+                ComPtr<ID3D11Texture2D> depthStencilTex2D{};
+                resource->QueryInterface(__uuidof(ID3D11Texture2D), (void**)depthStencilTex2D.ReleaseAndGetAddressOf());
+
+                ComPtr<ID3D11DepthStencilView> depthStencilSliceView{};
+                const CD3D11_DEPTH_STENCIL_VIEW_DESC depthStencilViewDesc
+                (
+                    D3D11_DSV_DIMENSION_TEXTURE2DARRAY,
+                    DXGI_FORMAT_D32_FLOAT_S8X24_UINT, 0, (UINT)viewIdx, 1
+                );
+                if (FAILED(m_device->CreateDepthStencilView(depthStencilTex2D.Get(), &depthStencilViewDesc, depthStencilSliceView.ReleaseAndGetAddressOf()))) {
+                    Log::Write(Log::Level::Error, "Failed to create depth stencil slice-view for multi-view swapchain.");
+                    return {};
+                }
+
+                ComPtr<ID3D11RenderTargetView> renderTargetView;
+                const CD3D11_RENDER_TARGET_VIEW_DESC renderTargetViewDesc(
+                    D3D11_RTV_DIMENSION_TEXTURE2DARRAY,
+                    (DXGI_FORMAT)swapchainFormat, 0, (UINT)viewIdx, 1
+                );
+                if (m_device->CreateRenderTargetView(colorTexture.Get(), &renderTargetViewDesc,
+                    renderTargetView.ReleaseAndGetAddressOf())) {
+                    Log::Write(Log::Level::Error, "Failed to create depth stencil slice-view for per view swapchain.");
+                    return {};
+                }
+                depthStencilViews[viewIdx] = {depthStencilSliceView, renderTargetView};
+            }
+        }
+        return depthStencilViews;
+    }
+
+    void RenderVisibilityMaskPassIfDirty(
+        std::span<const XrSwapchainImageBaseHeader* const> swapchainImages,
+        const std::array<XrCompositionLayerProjectionView, 2>& layerViews,
+        const int64_t swapchainFormat
+    ) {
+        if (!m_visibilityMaskState.isDirty)
+            return ;
+        if (m_visibilityMaskState.pixelShader == nullptr ||
+            m_visibilityMaskState.vertexShader == nullptr)
+            return ;
+        assert(m_device != nullptr);
+        assert(m_deviceContext != nullptr);
+
+        const auto depthStencilViews = CreateDepthStencilViewsFromImageArray(swapchainImages, swapchainFormat);
+
+        for (size_t viewIdx = 0; viewIdx < 2; ++viewIdx) {
+            const auto& vbuff = m_visibilityMaskState.vertexBuffers[viewIdx];
+            if (vbuff.vb == nullptr || vbuff.vertexCount == 0)
+                continue;
+
+            auto& dsView = depthStencilViews[viewIdx];
+            if (dsView.renderTargetView == nullptr) continue;
+
+            m_deviceContext->OMSetRenderTargets(1, dsView.renderTargetView.GetAddressOf(), dsView.depthStencilView.Get());
+            const float blendFactor[4] = { 0, 0, 0, 0 };
+            constexpr const UINT sampleMask = 0xFFFFFFFF;
+            m_deviceContext->OMSetBlendState(m_visibilityMaskState.noBlendState.Get(), blendFactor, sampleMask);
+            m_deviceContext->OMSetDepthStencilState(m_visibilityMaskState.fillStencilState.Get(), 1);  // Use stencil ref = 1
+
+            m_deviceContext->RSSetState(m_visibilityMaskState.noCullState.Get());
+
+            const auto& layerView = layerViews[viewIdx];
+            const auto& layerRect = layerView.subImage.imageRect;
+            const CD3D11_VIEWPORT viewport(
+                (float)layerRect.offset.x,
+                (float)layerRect.offset.y,
+                (float)layerRect.extent.width,
+                (float)layerRect.extent.height
+            );
+            m_deviceContext->RSSetViewports(1, &viewport);
+            //m_deviceContext->ClearRenderTargetView(dsView.renderTargetView.Get(), DirectX::Colors::Transparent);
+            m_deviceContext->ClearDepthStencilView(dsView.depthStencilView.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
+
+            m_deviceContext->VSSetShader(m_visibilityMaskState.vertexShader.Get(), nullptr, 0);
+            m_deviceContext->PSSetShader(m_visibilityMaskState.pixelShader.Get(), nullptr, 0);
+            m_deviceContext->IASetInputLayout(m_visibilityMaskState.vertexLayout.Get());
+
+            const ALXR::ViewProjectionConstantBuffer viewProjection {
+                .ViewProjection = MakeProj_XMFLOAT4X4A(layerView),
+                .ViewID = (std::uint32_t)viewIdx
+            };
+            m_deviceContext->UpdateSubresource(m_viewProjectionCBuffer.Get(), 0, nullptr, &viewProjection, 0, 0);
+            m_deviceContext->VSSetConstantBuffers(0, 1, m_viewProjectionCBuffer.GetAddressOf());
+
+            const constexpr UINT stride = sizeof(XrVector2f);
+            const constexpr UINT offset = 0;
+            m_deviceContext->IASetVertexBuffers(0, 1, vbuff.vb.GetAddressOf(), &stride, &offset);
+            m_deviceContext->IASetIndexBuffer(vbuff.ib.Get(), DXGI_FORMAT_R32_UINT, 0);
+            m_deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            m_deviceContext->DrawIndexed((UINT)vbuff.indexCount, 0, 0);
+        }
+
+        m_visibilityMaskState.isDirty = false;
+    }
+
     template < typename RenderFun >
-    void RenderMultiViewImpl(const XrCompositionLayerProjectionView& layerView, const XrSwapchainImageBaseHeader* swapchainImage,
+    void RenderMultiViewImpl(const std::array<XrCompositionLayerProjectionView,2>& layerViews, const XrSwapchainImageBaseHeader* swapchainImage,
         int64_t swapchainFormat, const ALXR::CColorType& clearColour, RenderFun&& renderFn) {
         assert(IsMultiViewEnabled());
 
         ID3D11Texture2D* const colorTexture = reinterpret_cast<const XrSwapchainImageD3D11KHR*>(swapchainImage)->texture;
-
-        const CD3D11_VIEWPORT viewport((float)layerView.subImage.imageRect.offset.x, (float)layerView.subImage.imageRect.offset.y,
-            (float)layerView.subImage.imageRect.extent.width,
-            (float)layerView.subImage.imageRect.extent.height);
-        m_deviceContext->RSSetViewports(1, &viewport);
 
         // Create RenderTargetView with original swapchain format (swapchain is typeless).
         ComPtr<ID3D11RenderTargetView> renderTargetView;
@@ -379,23 +512,46 @@ struct D3D11GraphicsPlugin final : public IGraphicsPlugin {
 
         const ComPtr<ID3D11DepthStencilView> depthStencilView = GetDepthStencilView(colorTexture, D3D11_DSV_DIMENSION_TEXTURE2DARRAY);
 
+        std::array<const XrSwapchainImageBaseHeader*, 1> swapchainImages = { swapchainImage };
+        RenderVisibilityMaskPassIfDirty(swapchainImages, layerViews, swapchainFormat);
+
+        m_deviceContext->OMSetRenderTargets(1, renderTargetView.GetAddressOf(), depthStencilView.Get());
+        if (m_visibilityMaskState.testStencilState != nullptr) {
+            m_deviceContext->OMSetDepthStencilState(m_visibilityMaskState.testStencilState.Get(), 1);
+        }
+        m_deviceContext->RSSetState(cullState.Get());
+
+        const auto& layerView = layerViews[0];
+        const CD3D11_VIEWPORT viewport((float)layerView.subImage.imageRect.offset.x, (float)layerView.subImage.imageRect.offset.y,
+            (float)layerView.subImage.imageRect.extent.width,
+            (float)layerView.subImage.imageRect.extent.height);
+        m_deviceContext->RSSetViewports(1, &viewport);
+
         // Clear swapchain and depth buffer. NOTE: This will clear the entire render target view, not just the specified view.
         // TODO: Do not clear to a color when using a pass-through view configuration.
-        m_deviceContext->ClearRenderTargetView(renderTargetView.Get(), clearColour);//);
-        m_deviceContext->ClearDepthStencilView(depthStencilView.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
-
-        ID3D11RenderTargetView* renderTargets[] = { renderTargetView.Get() };
-        m_deviceContext->OMSetRenderTargets((UINT)std::size(renderTargets), renderTargets, depthStencilView.Get());
+        m_deviceContext->ClearRenderTargetView(renderTargetView.Get(), clearColour);
+        m_deviceContext->ClearDepthStencilView(depthStencilView.Get(), D3D11_CLEAR_DEPTH, 1.0f, 0);
 
         renderFn();
+    }
+
+    static inline DirectX::XMMATRIX XM_CALLCONV MakeProjMatrix(const XrCompositionLayerProjectionView& layerView)
+    {
+        Eigen::Matrix4f projectionMatrix = ALXR::CreateProjectionFov(ALXR::GraphicsAPI::D3D, layerView.fov, 0.05f, 100.0f);
+        return ALXR::LoadXrMatrix(projectionMatrix);
+    }
+
+    static inline DirectX::XMFLOAT4X4A XM_CALLCONV MakeProj_XMFLOAT4X4A(const XrCompositionLayerProjectionView& layerView) {
+        DirectX::XMFLOAT4X4A proj;
+        XMStoreFloat4x4(&proj, MakeProjMatrix(layerView));
+        return proj;
     }
 
     static inline DirectX::XMFLOAT4X4A XM_CALLCONV MakeViewProjMatrix(const XrCompositionLayerProjectionView& layerView)
     {
         const XMMATRIX spaceToView = XMMatrixInverse(nullptr, ALXR::LoadXrPose(layerView.pose));
-        Eigen::Matrix4f projectionMatrix = ALXR::CreateProjectionFov(ALXR::GraphicsAPI::D3D, layerView.fov, 0.05f, 100.0f);
         DirectX::XMFLOAT4X4A viewProj;
-        XMStoreFloat4x4(&viewProj, XMMatrixTranspose(spaceToView * ALXR::LoadXrMatrix(projectionMatrix)));
+        XMStoreFloat4x4(&viewProj, XMMatrixTranspose(spaceToView * MakeProjMatrix(layerView)));
         return viewProj;
     }
 
@@ -407,7 +563,7 @@ struct D3D11GraphicsPlugin final : public IGraphicsPlugin {
         const std::vector<Cube>& cubes
     ) override
     {
-        RenderMultiViewImpl(layerViews[0], swapchainImage, swapchainFormat, ALXR::ClearColors[ClearColorIndex(mode)], [&]()
+        RenderMultiViewImpl(layerViews, swapchainImage, swapchainFormat, ALXR::ClearColors[ClearColorIndex(mode)], [&]()
         {
             ALXR::MultiViewProjectionConstantBuffer viewProjections;
             for (std::uint32_t viewIndex = 0; viewIndex < 2; ++viewIndex) {
@@ -450,7 +606,7 @@ struct D3D11GraphicsPlugin final : public IGraphicsPlugin {
         const PassthroughMode newMode /*= PassthroughMode::None*/
     ) override
     {
-        RenderMultiViewImpl(layerViews[0], swapchainImage, swapchainFormat, ALXR::VideoClearColors[ClearColorIndex(newMode)], [&]()
+        RenderMultiViewImpl(layerViews, swapchainImage, swapchainFormat, ALXR::VideoClearColors[ClearColorIndex(newMode)], [&]()
         {
             if (currentTextureIdx == std::size_t(-1))
                 return;
@@ -485,35 +641,53 @@ struct D3D11GraphicsPlugin final : public IGraphicsPlugin {
     }
 
     template < typename RenderFun >
-    void RenderViewImpl(const XrCompositionLayerProjectionView& layerView, const XrSwapchainImageBaseHeader* swapchainImage,
+    void RenderViewImpl(const std::array<XrCompositionLayerProjectionView,2>& layerViews, const std::array<const XrSwapchainImageBaseHeader*,2>& swapchainImages,
                     int64_t swapchainFormat, const ALXR::CColorType& clearColour, RenderFun&& renderFn) {
-        CHECK(layerView.subImage.imageArrayIndex == 0);  // Texture arrays not supported.
         assert(!IsMultiViewEnabled());
 
-        ID3D11Texture2D* const colorTexture = reinterpret_cast<const XrSwapchainImageD3D11KHR*>(swapchainImage)->texture;
+        std::array<ComPtr<ID3D11DepthStencilView>, 2> depthStencilViews{};
+        std::array<ComPtr<ID3D11RenderTargetView>, 2> renderTargetViews{};
 
-        const CD3D11_VIEWPORT viewport( (float)layerView.subImage.imageRect.offset.x, (float)layerView.subImage.imageRect.offset.y,
-                                        (float)layerView.subImage.imageRect.extent.width,
-                                        (float)layerView.subImage.imageRect.extent.height);
-        m_deviceContext->RSSetViewports(1, &viewport);
+        for (std::uint32_t viewIdx = 0; viewIdx < layerViews.size(); ++viewIdx) {
+            const XrSwapchainImageBaseHeader* const swapchainImage = swapchainImages[viewIdx];
+            ID3D11Texture2D* const colorTexture = reinterpret_cast<const XrSwapchainImageD3D11KHR*>(swapchainImage)->texture;
 
-        // Create RenderTargetView with original swapchain format (swapchain is typeless).
-        ComPtr<ID3D11RenderTargetView> renderTargetView;
-        const CD3D11_RENDER_TARGET_VIEW_DESC renderTargetViewDesc(D3D11_RTV_DIMENSION_TEXTURE2D, (DXGI_FORMAT)swapchainFormat);
-        CHECK_HRCMD(
-            m_device->CreateRenderTargetView(colorTexture, &renderTargetViewDesc, renderTargetView.ReleaseAndGetAddressOf()));
+            // Create RenderTargetView with original swapchain format (swapchain is typeless).
+            ComPtr<ID3D11RenderTargetView> renderTargetView;
+            const CD3D11_RENDER_TARGET_VIEW_DESC renderTargetViewDesc(D3D11_RTV_DIMENSION_TEXTURE2D, (DXGI_FORMAT)swapchainFormat);
+            CHECK_HRCMD(
+                m_device->CreateRenderTargetView(colorTexture, &renderTargetViewDesc, renderTargetViews[viewIdx].ReleaseAndGetAddressOf()));
 
-        const ComPtr<ID3D11DepthStencilView> depthStencilView = GetDepthStencilView(colorTexture);
+            depthStencilViews[viewIdx] = GetDepthStencilView(colorTexture);
+        }
 
-        // Clear swapchain and depth buffer. NOTE: This will clear the entire render target view, not just the specified view.
-        // TODO: Do not clear to a color when using a pass-through view configuration.
-        m_deviceContext->ClearRenderTargetView(renderTargetView.Get(), clearColour);//);
-        m_deviceContext->ClearDepthStencilView(depthStencilView.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
+        RenderVisibilityMaskPassIfDirty(swapchainImages, layerViews, swapchainFormat);
 
-        ID3D11RenderTargetView* renderTargets[] = {renderTargetView.Get()};
-        m_deviceContext->OMSetRenderTargets((UINT)std::size(renderTargets), renderTargets, depthStencilView.Get());
+        for (std::uint32_t viewIdx = 0; viewIdx < layerViews.size(); ++viewIdx) {
+            const XrCompositionLayerProjectionView& layerView = layerViews[viewIdx];
+            CHECK(layerView.subImage.imageArrayIndex == 0);
 
-        renderFn();
+            const auto& depthStencilView = depthStencilViews[viewIdx];
+            const auto& renderTargetView = renderTargetViews[viewIdx];
+
+            m_deviceContext->OMSetRenderTargets(1, renderTargetView.GetAddressOf(), depthStencilView.Get());
+            if (m_visibilityMaskState.testStencilState != nullptr) {
+                m_deviceContext->OMSetDepthStencilState(m_visibilityMaskState.testStencilState.Get(), 1);
+            }
+            m_deviceContext->RSSetState(cullState.Get());
+
+            const CD3D11_VIEWPORT viewport((float)layerView.subImage.imageRect.offset.x, (float)layerView.subImage.imageRect.offset.y,
+                (float)layerView.subImage.imageRect.extent.width,
+                (float)layerView.subImage.imageRect.extent.height);
+            m_deviceContext->RSSetViewports(1, &viewport);
+
+            // Clear swapchain and depth buffer. NOTE: This will clear the entire render target view, not just the specified view.
+            // TODO: Do not clear to a color when using a pass-through view configuration.
+            m_deviceContext->ClearRenderTargetView(renderTargetView.Get(), clearColour);
+            m_deviceContext->ClearDepthStencilView(depthStencilView.Get(), D3D11_CLEAR_DEPTH, 1.0f, 0);
+
+            renderFn(viewIdx, layerView);
+        }
     }
 
     inline std::size_t ClearColorIndex(const PassthroughMode /*ptMode*/) const {
@@ -525,48 +699,45 @@ struct D3D11GraphicsPlugin final : public IGraphicsPlugin {
     virtual void RenderView
     (
         const std::array<XrCompositionLayerProjectionView, 2>& layerViews,
-        const std::array<XrSwapchainImageBaseHeader*, 2>& swapchainImages,
+        const std::array<const XrSwapchainImageBaseHeader*, 2>& swapchainImages,
         const std::int64_t swapchainFormat, const PassthroughMode mode,
         const std::vector<Cube>& cubes
     ) override
     {
-        for (std::size_t idx = 0; idx < layerViews.size(); ++idx) {
-            const auto& layerView = layerViews[idx];
-            RenderViewImpl(layerView, swapchainImages[idx], swapchainFormat, ALXR::ClearColors[ClearColorIndex(mode)], [&]()
-            {
-                // Set shaders and constant buffers.
-                ALXR::ViewProjectionConstantBuffer viewProjection{
-                    .ViewProjection = MakeViewProjMatrix(layerView),
-                };
-                m_deviceContext->UpdateSubresource(m_viewProjectionCBuffer.Get(), 0, nullptr, &viewProjection, 0, 0);
+        RenderViewImpl(layerViews, swapchainImages, swapchainFormat, ALXR::ClearColors[ClearColorIndex(mode)], [&](const std::uint32_t /*viewID*/, const auto& layerView)
+        {
+            // Set shaders and constant buffers.
+            ALXR::ViewProjectionConstantBuffer viewProjection{
+                .ViewProjection = MakeViewProjMatrix(layerView),
+            };
+            m_deviceContext->UpdateSubresource(m_viewProjectionCBuffer.Get(), 0, nullptr, &viewProjection, 0, 0);
 
-                ID3D11Buffer* const constantBuffers[] = { m_modelCBuffer.Get(), m_viewProjectionCBuffer.Get() };
-                m_deviceContext->VSSetConstantBuffers(0, (UINT)std::size(constantBuffers), constantBuffers);
-                m_deviceContext->VSSetShader(m_vertexShader.Get(), nullptr, 0);
-                m_deviceContext->PSSetShader(m_pixelShader.Get(), nullptr, 0);
+            ID3D11Buffer* const constantBuffers[] = { m_modelCBuffer.Get(), m_viewProjectionCBuffer.Get() };
+            m_deviceContext->VSSetConstantBuffers(0, (UINT)std::size(constantBuffers), constantBuffers);
+            m_deviceContext->VSSetShader(m_vertexShader.Get(), nullptr, 0);
+            m_deviceContext->PSSetShader(m_pixelShader.Get(), nullptr, 0);
 
-                // Set cube primitive data.
-                constexpr static const UINT strides[] = { sizeof(Geometry::Vertex) };
-                constexpr static const UINT offsets[] = { 0 };
-                ID3D11Buffer* vertexBuffers[] = { m_cubeVertexBuffer.Get() };
-                m_deviceContext->IASetVertexBuffers(0, (UINT)std::size(vertexBuffers), vertexBuffers, strides, offsets);
-                m_deviceContext->IASetIndexBuffer(m_cubeIndexBuffer.Get(), DXGI_FORMAT_R16_UINT, 0);
-                m_deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                m_deviceContext->IASetInputLayout(m_inputLayout.Get());
+            // Set cube primitive data.
+            constexpr static const UINT strides[] = { sizeof(Geometry::Vertex) };
+            constexpr static const UINT offsets[] = { 0 };
+            ID3D11Buffer* vertexBuffers[] = { m_cubeVertexBuffer.Get() };
+            m_deviceContext->IASetVertexBuffers(0, (UINT)std::size(vertexBuffers), vertexBuffers, strides, offsets);
+            m_deviceContext->IASetIndexBuffer(m_cubeIndexBuffer.Get(), DXGI_FORMAT_R16_UINT, 0);
+            m_deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            m_deviceContext->IASetInputLayout(m_inputLayout.Get());
 
-                // Render each cube
-                for (const Cube& cube : cubes) {
-                    // Compute and update the model transform.
-                    ALXR::ModelConstantBuffer model;
-                    XMStoreFloat4x4(&model.Model,
-                        XMMatrixTranspose(XMMatrixScaling(cube.Scale.x, cube.Scale.y, cube.Scale.z) * ALXR::LoadXrPose(cube.Pose)));
-                    m_deviceContext->UpdateSubresource(m_modelCBuffer.Get(), 0, nullptr, &model, 0, 0);
+            // Render each cube
+            for (const Cube& cube : cubes) {
+                // Compute and update the model transform.
+                ALXR::ModelConstantBuffer model;
+                XMStoreFloat4x4(&model.Model,
+                    XMMatrixTranspose(XMMatrixScaling(cube.Scale.x, cube.Scale.y, cube.Scale.z) * ALXR::LoadXrPose(cube.Pose)));
+                m_deviceContext->UpdateSubresource(m_modelCBuffer.Get(), 0, nullptr, &model, 0, 0);
 
-                    // Draw the cube.
-                    m_deviceContext->DrawIndexed((UINT)std::size(Geometry::c_cubeIndices), 0, 0);
-                }
-            });
-        }
+                // Draw the cube.
+                m_deviceContext->DrawIndexed((UINT)std::size(Geometry::c_cubeIndices), 0, 0);
+            }
+        });
     }
 
     uint32_t GetSupportedSwapchainSampleCount(const XrViewConfigurationView&) override { return 1; }
@@ -973,50 +1144,48 @@ struct D3D11GraphicsPlugin final : public IGraphicsPlugin {
     virtual void RenderVideoView
     (
         const std::array<XrCompositionLayerProjectionView, 2>& layerViews,
-        const std::array<XrSwapchainImageBaseHeader*, 2>& swapchainImages,
+        const std::array<const XrSwapchainImageBaseHeader*, 2>& swapchainImages,
         const std::int64_t swapchainFormat,
         const PassthroughMode newMode /*= PassthroughMode::None*/
     ) override
     {
-        for (std::uint32_t viewID = 0; viewID < layerViews.size(); ++viewID) {
-            RenderViewImpl(layerViews[viewID], swapchainImages[viewID], swapchainFormat, ALXR::VideoClearColors[ClearColorIndex(newMode)], [&]()
-            {
-                if (currentTextureIdx == std::size_t(-1))
-                    return;
-                const auto& videoTex = m_videoTextures[currentTextureIdx];
+        RenderViewImpl(layerViews, swapchainImages, swapchainFormat, ALXR::VideoClearColors[ClearColorIndex(newMode)], [&](const std::uint32_t viewID, const auto&)
+        {
+            if (currentTextureIdx == std::size_t(-1))
+                return;
+            const auto& videoTex = m_videoTextures[currentTextureIdx];
 
-                const ALXR::ViewProjectionConstantBuffer viewProjection{ .ViewID = viewID };
-                m_deviceContext->UpdateSubresource(m_viewProjectionCBuffer.Get(), 0, nullptr, &viewProjection, 0, 0);
+            const ALXR::ViewProjectionConstantBuffer viewProjection{ .ViewID = viewID };
+            m_deviceContext->UpdateSubresource(m_viewProjectionCBuffer.Get(), 0, nullptr, &viewProjection, 0, 0);
 
-                ID3D11Buffer* const constantBuffers[] = { m_viewProjectionCBuffer.Get() };
-                m_deviceContext->VSSetConstantBuffers(1, (UINT)std::size(constantBuffers), constantBuffers);
-                m_deviceContext->VSSetShader(m_videoVertexShader.Get(), nullptr, 0);
+            ID3D11Buffer* const constantBuffers[] = { m_viewProjectionCBuffer.Get() };
+            m_deviceContext->VSSetConstantBuffers(1, (UINT)std::size(constantBuffers), constantBuffers);
+            m_deviceContext->VSSetShader(m_videoVertexShader.Get(), nullptr, 0);
 
-                if (const auto fovDecParmPtr = m_fovDecodeParams) {
-                    alignas(16) const ALXR::FoveatedDecodeParams fdParam = *fovDecParmPtr;
-                    m_deviceContext->UpdateSubresource(m_fovDecodeCBuffer.Get(), 0, nullptr, &fdParam, 0, 0);
-                    ID3D11Buffer* const psConstantBuffers[] = { m_fovDecodeCBuffer.Get() };
-                    m_deviceContext->PSSetConstantBuffers(2, (UINT)std::size(psConstantBuffers), psConstantBuffers);
-                }
-                const bool is3PlaneFormat = videoTex.chromaVSRV != nullptr;
-                m_deviceContext->PSSetShader(m_videoPixelShader[VideoShaderIndex(is3PlaneFormat, newMode)].Get(), nullptr, 0);
+            if (const auto fovDecParmPtr = m_fovDecodeParams) {
+                alignas(16) const ALXR::FoveatedDecodeParams fdParam = *fovDecParmPtr;
+                m_deviceContext->UpdateSubresource(m_fovDecodeCBuffer.Get(), 0, nullptr, &fdParam, 0, 0);
+                ID3D11Buffer* const psConstantBuffers[] = { m_fovDecodeCBuffer.Get() };
+                m_deviceContext->PSSetConstantBuffers(2, (UINT)std::size(psConstantBuffers), psConstantBuffers);
+            }
+            const bool is3PlaneFormat = videoTex.chromaVSRV != nullptr;
+            m_deviceContext->PSSetShader(m_videoPixelShader[VideoShaderIndex(is3PlaneFormat, newMode)].Get(), nullptr, 0);
 
-                const std::array<ID3D11ShaderResourceView*, 3> srvs{
-                    videoTex.lumaSRV.Get(),
-                    videoTex.chromaSRV.Get(),
-                    videoTex.chromaVSRV.Get()
-                };
-                const UINT srvSize = is3PlaneFormat ? (UINT)srvs.size() : 2u;
-                m_deviceContext->PSSetShaderResources(0, srvSize, srvs.data());
+            const std::array<ID3D11ShaderResourceView*, 3> srvs{
+                videoTex.lumaSRV.Get(),
+                videoTex.chromaSRV.Get(),
+                videoTex.chromaVSRV.Get()
+            };
+            const UINT srvSize = is3PlaneFormat ? (UINT)srvs.size() : 2u;
+            m_deviceContext->PSSetShaderResources(0, srvSize, srvs.data());
 
-                const std::array<ID3D11SamplerState*, 2> samplers = { m_lumaSampler.Get(), m_chromaSampler.Get() };
-                m_deviceContext->PSSetSamplers(0, (UINT)samplers.size(), samplers.data());
+            const std::array<ID3D11SamplerState*, 2> samplers = { m_lumaSampler.Get(), m_chromaSampler.Get() };
+            m_deviceContext->PSSetSamplers(0, (UINT)samplers.size(), samplers.data());
 
-                m_deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                m_deviceContext->IASetInputLayout(nullptr);
-                m_deviceContext->Draw(3, 0);
-            });
-        }
+            m_deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            m_deviceContext->IASetInputLayout(nullptr);
+            m_deviceContext->Draw(3, 0);
+        });
     }
 
     inline void SetEnvironmentBlendMode(const XrEnvironmentBlendMode newMode) {
@@ -1053,6 +1222,138 @@ struct D3D11GraphicsPlugin final : public IGraphicsPlugin {
             std::make_shared<ALXR::FoveatedDecodeParams>(*newFovDecParmPtr) : nullptr;
     }
 
+    virtual bool SetVisibilityMask(uint32_t viewIndex, const struct XrVisibilityMaskKHR& visibilityMask) override {
+
+        if (visibilityMask.vertices == nullptr ||
+            visibilityMask.indices == nullptr ||
+            visibilityMask.indexCountOutput == 0 ||
+            visibilityMask.vertexCountOutput == 0 ||
+            m_device == nullptr) {
+            return false;
+        }
+
+        if (m_visibilityMaskState.vertexShader == nullptr) {
+            const auto& visibilityMaskVS = m_coreShaders.visibilityMaskVS;
+            if (FAILED(m_device->CreateVertexShader(
+                visibilityMaskVS.data(), visibilityMaskVS.size(), nullptr,
+                m_visibilityMaskState.vertexShader.ReleaseAndGetAddressOf()))) {
+                Log::Write(Log::Level::Error, "Failed to create visibility mask vertex shader.");
+                return false;
+            }
+            static constexpr const std::array<D3D11_INPUT_ELEMENT_DESC, 1> Vertexlayout = {
+                { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+            };
+            if (FAILED(m_device->CreateInputLayout(
+                Vertexlayout.data(), (UINT)Vertexlayout.size(),
+                visibilityMaskVS.data(), visibilityMaskVS.size(),
+                m_visibilityMaskState.vertexLayout.ReleaseAndGetAddressOf()))) {
+                Log::Write(Log::Level::Error, "Failed to create visibility mask vertex layout.");
+                return false;
+            }
+        }
+        assert(m_visibilityMaskState.vertexLayout != nullptr);
+
+        if (m_visibilityMaskState.pixelShader == nullptr) {
+            const auto& visibilityMaskPS = m_coreShaders.visibilityMaskPS;
+            if (FAILED(m_device->CreatePixelShader(
+                visibilityMaskPS.data(), visibilityMaskPS.size(), nullptr,
+                m_visibilityMaskState.pixelShader.ReleaseAndGetAddressOf()))) {
+                Log::Write(Log::Level::Error, "Failed to create visibility mask pixel shader.");
+                return false;
+            }
+        }
+
+        if (m_visibilityMaskState.noCullState == nullptr) {
+            CD3D11_RASTERIZER_DESC rasterizerDesc { D3D11_DEFAULT };
+            rasterizerDesc.FillMode = D3D11_FILL_SOLID;
+            rasterizerDesc.CullMode = D3D11_CULL_NONE;
+            rasterizerDesc.FrontCounterClockwise = TRUE;
+            if (FAILED(m_device->CreateRasterizerState(&rasterizerDesc, m_visibilityMaskState.noCullState.ReleaseAndGetAddressOf()))) {
+                Log::Write(Log::Level::Error, "Failed to create visibility mask rasterizer state.");
+                return false;
+            }
+        }
+
+        if (m_visibilityMaskState.noBlendState == nullptr) {
+            CD3D11_BLEND_DESC blendDesc { D3D11_DEFAULT };
+            std::fill_n(blendDesc.RenderTarget, 8, D3D11_RENDER_TARGET_BLEND_DESC {
+                .BlendEnable = FALSE,
+                .RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL, // Allow writing all color channels
+            });
+            if (FAILED(m_device->CreateBlendState(&blendDesc, m_visibilityMaskState.noBlendState.ReleaseAndGetAddressOf()))) {
+                Log::Write(Log::Level::Error, "Failed to create visibility mask blend state.");
+                return false;
+            }
+        }
+
+        if (m_visibilityMaskState.fillStencilState == nullptr) {
+            constexpr const D3D11_DEPTH_STENCILOP_DESC stencilOpDesc = {
+                .StencilFailOp = D3D11_STENCIL_OP_KEEP,      // Replace stencil value if stencil test fails,
+                .StencilDepthFailOp = D3D11_STENCIL_OP_KEEP, // Replace stencil value if depth test fails (depth test disabled)
+                .StencilPassOp = D3D11_STENCIL_OP_REPLACE,   // Replace stencil value if stencil test passes
+                .StencilFunc = D3D11_COMPARISON_ALWAYS,      // Always pass stencil test (fill buffer)
+            };
+            constexpr const D3D11_DEPTH_STENCIL_DESC stencilDesc = {
+                .DepthEnable = FALSE,
+                .DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO,
+                .DepthFunc = D3D11_COMPARISON_ALWAYS,
+                .StencilEnable = TRUE,
+                .StencilReadMask = 0xFF,  // Allow reading from all stencil bit
+                .StencilWriteMask = 0xFF, // Allow writing to all stencil bit
+                .FrontFace = stencilOpDesc,
+                .BackFace = stencilOpDesc,
+            };
+            if (FAILED(m_device->CreateDepthStencilState(&stencilDesc, m_visibilityMaskState.fillStencilState.ReleaseAndGetAddressOf()))) {
+                Log::Write(Log::Level::Error, "Failed to create visibility mask fill stencil state.");
+                return false;
+            }
+        }
+
+        if (m_visibilityMaskState.testStencilState == nullptr) {
+            constexpr const D3D11_DEPTH_STENCILOP_DESC stencilOpDesc = {
+                .StencilFailOp = D3D11_STENCIL_OP_KEEP,   // Keep stencil value if stencil test fails
+                .StencilDepthFailOp = D3D11_STENCIL_OP_KEEP, // Keep stencil value if depth test fails
+                .StencilPassOp = D3D11_STENCIL_OP_KEEP,   // Keep stencil value if both tests pass
+                .StencilFunc = D3D11_COMPARISON_NOT_EQUAL,    // Only pass if stencil value equals reference
+            };
+            constexpr const D3D11_DEPTH_STENCIL_DESC stencilDesc = {
+                .DepthEnable = TRUE,
+                .DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL,
+                .DepthFunc = D3D11_COMPARISON_LESS,
+                .StencilEnable = TRUE,
+                .StencilReadMask = 0xFF,  // Allow reading from all stencil bit
+                .StencilWriteMask = 0x00, // No writing to stencil buffer (read-only
+                .FrontFace = stencilOpDesc,
+                .BackFace = stencilOpDesc,
+            };
+            if (FAILED(m_device->CreateDepthStencilState(&stencilDesc,
+                                                         m_visibilityMaskState.testStencilState.ReleaseAndGetAddressOf()))) {
+                Log::Write(Log::Level::Error, "Failed to create visibility mask test stencil state.");
+                return false;
+            }
+        }
+
+        auto& vbuff = m_visibilityMaskState.vertexBuffers[viewIndex];
+
+        const D3D11_SUBRESOURCE_DATA indexBufferData{ visibilityMask.indices };
+        const CD3D11_BUFFER_DESC indexBufferDesc(sizeof(std::uint32_t) * visibilityMask.indexCountOutput, D3D11_BIND_INDEX_BUFFER);
+        if (FAILED(m_device->CreateBuffer(&indexBufferDesc, &indexBufferData, vbuff.ib.ReleaseAndGetAddressOf()))) {
+            Log::Write(Log::Level::Error, "Failed to create visibility mask index buffer.");
+            return false;
+        }
+        vbuff.indexCount = visibilityMask.indexCountOutput;
+
+        const D3D11_SUBRESOURCE_DATA vertexBufferData{ visibilityMask.vertices };
+        const CD3D11_BUFFER_DESC vertexBufferDesc(sizeof(XrVector2f) * visibilityMask.vertexCountOutput, D3D11_BIND_VERTEX_BUFFER);
+        if (FAILED(m_device->CreateBuffer(&vertexBufferDesc, &vertexBufferData, vbuff.vb.ReleaseAndGetAddressOf()))) {
+            Log::Write(Log::Level::Error, "Failed to create visibility mask vertex buffer.");
+            return false;
+        }
+        vbuff.vertexCount = visibilityMask.vertexCountOutput;
+        
+        return m_visibilityMaskState.isDirty = true;
+    }
+
 #include "cuda/d3d11cuda_interop.inl"
 
    private:
@@ -1070,6 +1371,24 @@ struct D3D11GraphicsPlugin final : public IGraphicsPlugin {
     ComPtr<ID3D11Buffer> m_fovDecodeCBuffer;
     ComPtr<ID3D11Buffer> m_cubeVertexBuffer;
     ComPtr<ID3D11Buffer> m_cubeIndexBuffer;
+    ComPtr<ID3D11RasterizerState> cullState{};
+    struct VisibilityMaskData final {
+        ComPtr<ID3D11VertexShader> vertexShader{};
+        ComPtr<ID3D11PixelShader>  pixelShader{};
+        ComPtr<ID3D11InputLayout> vertexLayout{};
+        struct VertexBuffer final {
+            ComPtr<ID3D11Buffer> vb{};
+            ComPtr<ID3D11Buffer> ib{};
+            uint32_t vertexCount{0};
+            uint32_t indexCount{ 0 };
+        };
+        std::array<VertexBuffer, 2> vertexBuffers{};
+        ComPtr<ID3D11DepthStencilState> fillStencilState{};
+        ComPtr<ID3D11DepthStencilState> testStencilState{};
+        ComPtr<ID3D11BlendState> noBlendState{};
+        ComPtr<ID3D11RasterizerState> noCullState{};
+        std::atomic_bool isDirty{ false };
+    } m_visibilityMaskState;
 //video textures /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     using FoveatedDecodeParamsPtr = std::shared_ptr<ALXR::FoveatedDecodeParams>;
     FoveatedDecodeParamsPtr m_fovDecodeParams{};

@@ -1032,7 +1032,7 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
     virtual void RenderView
     (
         const std::array<XrCompositionLayerProjectionView, 2>& layerViews,
-        const std::array<XrSwapchainImageBaseHeader*, 2>& swapchainImages,
+        const std::array<const XrSwapchainImageBaseHeader*, 2>& swapchainImages,
         const std::int64_t swapchainFormat, const PassthroughMode ptMode,
         const std::vector<Cube>& cubes
     ) override
@@ -1619,7 +1619,7 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
 
     virtual void RenderVideoView(
         const std::array<XrCompositionLayerProjectionView, 2>& layerViews,
-        const std::array<XrSwapchainImageBaseHeader*, 2>& swapchainImages,
+        const std::array<const XrSwapchainImageBaseHeader*, 2>& swapchainImages,
         const std::int64_t swapchainFormat, const PassthroughMode newMode /*= PassthroughMode::None*/
     ) override
     {

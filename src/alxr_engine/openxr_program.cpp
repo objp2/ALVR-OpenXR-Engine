@@ -3075,7 +3075,7 @@ struct OpenXrProgram final : IOpenXrProgram {
         const auto vizCubes = isVideoStream ? VizCubeList{} : GetVisualizedCubes(predictedDisplayTime);
         const auto ptMode = static_cast<const ::PassthroughMode>(mode);
 
-        std::array<XrSwapchainImageBaseHeader*, 2> swapchainImages = {nullptr, nullptr};
+        std::array<const XrSwapchainImageBaseHeader*, 2> swapchainImages = {nullptr, nullptr};
         // Render view to the appropriate part of the swapchain image.
         for (std::uint32_t i = 0; i < views.size(); ++i) {
             // Each view has a separate swapchain which is acquired, rendered to, and released.

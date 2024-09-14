@@ -51,6 +51,8 @@ struct CoreShaders {
 
     ShaderByteCode  lobbyVS;
     ShaderByteCode  lobbyPS;
+    ShaderByteCode  visibilityMaskVS;
+    ShaderByteCode  visibilityMaskPS;
     ShaderByteCode  videoVS;
     VideoPShaderMap videoPSMap;
 
@@ -68,6 +70,13 @@ struct CoreShaders {
         };
     }
 
+    ShaderByteCodeSpanList<2> GetVisibilityMaskCodes() const {
+        return {
+            ShaderByteCodeSpan { visibilityMaskVS.data(), visibilityMaskVS.size() },
+            ShaderByteCodeSpan { visibilityMaskPS.data(), visibilityMaskPS.size() }
+        };
+    }
+
     using VideoByteCodeList = ShaderByteCodeSpanList<VideoPShader::TypeCount + 1>;
     VideoByteCodeList GetVideoByteCodes(const bool useFovDecode) const {
         const auto& videoPSList = videoPSMap[std::size_t(useFovDecode)];
@@ -80,9 +89,16 @@ struct CoreShaders {
     }
 
     bool IsValid() const {
-        if (lobbyVS.empty() ||
-            lobbyPS.empty() ||
-            videoVS.empty()) return false;
+        for (auto sbcPtr : {
+            &lobbyVS,
+            &lobbyPS,
+            &visibilityMaskVS,
+            &visibilityMaskPS,
+            &videoVS
+        }) {
+            if (sbcPtr->empty())
+                return false;
+        }
         for (const auto& shaderList : videoPSMap) {
             for (const auto& sbc : shaderList) {
                 if (sbc.empty())
@@ -218,6 +234,8 @@ inline CoreShaders<T>::CoreShaders(
     };
     lobbyVS = LoadCSO("lobby_vert.cso");
     lobbyPS = LoadCSO("lobby_frag.cso");
+    visibilityMaskVS = LoadCSO("visibilityMask_vert.cso");
+    visibilityMaskPS = LoadCSO("visibilityMask_frag.cso");
     videoVS = LoadCSO("videoStream_vert.cso");
 
     std::size_t psListIndex = 0;

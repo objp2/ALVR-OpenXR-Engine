@@ -29,7 +29,7 @@ struct HeadlessGraphicsPlugin final : public IGraphicsPlugin {
     virtual void RenderView
     (
         const std::array<XrCompositionLayerProjectionView, 2>& /*layerViews*/,
-        const std::array<XrSwapchainImageBaseHeader*, 2>& /*swapchainImages*/,
+        const std::array<const XrSwapchainImageBaseHeader*, 2>& /*swapchainImages*/,
         const std::int64_t /*swapchainFormat*/,
         const PassthroughMode /*newMode*/,
         const std::vector<Cube>& /*cubes*/
