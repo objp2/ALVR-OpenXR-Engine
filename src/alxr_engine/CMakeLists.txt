@@ -278,48 +278,26 @@ if(Vulkan_LIBRARY)
     target_link_libraries(alxr_engine ${Vulkan_LIBRARY})
 endif()
 
-if(NOT ANDROID)
-    #set(ALVR_BIN_DIR ${ALVR_ROOT_DIR}/target/debug/examples)
-    #include(GNUInstallDirs)
-    #install(DIRECTORY ${FFMPEG_BIN_DIR} TYPE BIN)
-    if(MSVC)
-        string(TOLOWER ${CMAKE_BUILD_TYPE} BUILD_TYPE_LOWERED)
-        if (${BUILD_TYPE_LOWERED} MATCHES ".*debug.*")
-            message("Installing debug CRT depends")
-            set(CMAKE_INSTALL_DEBUG_LIBRARIES TRUE)
-            set(CMAKE_INSTALL_UCRT_LIBRARIES TRUE)
-            #set(CMAKE_INSTALL_DEBUG_LIBRARIES_ONLY TRUE)
-        endif()
+if(MSVC)
+    string(TOLOWER ${CMAKE_BUILD_TYPE} BUILD_TYPE_LOWERED)
+    if (${BUILD_TYPE_LOWERED} MATCHES ".*debug.*")
+        message("Installing debug CRT depends")
+        set(CMAKE_INSTALL_DEBUG_LIBRARIES TRUE)
+        set(CMAKE_INSTALL_UCRT_LIBRARIES TRUE)
+     endif()
 
-        include(InstallRequiredSystemLibraries)
-        #add_custom_target(copy_debug_libs
-        #    COMMAND ${CMAKE_COMMAND} -E copy
-        #    ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS} "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>"
-        #    || (COMMAND ${CMAKE_COMMAND} -E echo "Unable to copy the debug libraries, continuing..."))
-        foreach(libav_var ${FFMPEG_LIBS})
-            install(IMPORTED_RUNTIME_ARTIFACTS ${libav_var}
-                RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-                #LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-                #ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-        endforeach()
-    endif()
-    
-    # if (INSTALL_BUNDLED_FFMPEG AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    #     foreach(LIBAV_SO ${LIBAV_LINK_LIBRARIES})
-    #         file(REAL_PATH ${LIBAV_SO} REAL_LIBAV_SO)
-    #         install(FILES ${REAL_LIBAV_SO} DESTINATION ${CMAKE_INSTALL_LIBDIR})
-    #     endforeach()
-    # endif()
-    
-    #install(IMPORTED_RUNTIME_ARTIFACTS JsonCpp
-    #           RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    include(InstallRequiredSystemLibraries)
+     foreach(libav_var ${FFMPEG_LIBS})
+        install(IMPORTED_RUNTIME_ARTIFACTS ${libav_var}
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    endforeach()
+endif()
 
-    install(TARGETS alxr_engine
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-    if(WIN32)
-        install(FILES $<TARGET_PDB_FILE:alxr_engine> DESTINATION ${CMAKE_INSTALL_BINDIR})
-        install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/shaders/ DESTINATION ${CMAKE_INSTALL_BINDIR}/shaders)
-    endif()
+install(TARGETS alxr_engine
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+if(WIN32)
+    install(FILES $<TARGET_PDB_FILE:alxr_engine> DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/shaders/ DESTINATION ${CMAKE_INSTALL_BINDIR}/shaders)
 endif()

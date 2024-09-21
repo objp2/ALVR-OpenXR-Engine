@@ -846,6 +846,9 @@ if (USE_PICO_MOBILE_LOADER AND ANDROID)
             "${PICO_OPENXR_MOBILE_SDK}/libs/android.${ANDROID_ABI}/libopenxr_loader.so"
     )
     add_definitions(-DXR_USE_OXR_PICO)
+    install(IMPORTED_RUNTIME_ARTIFACTS openxr_loader
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 else()
     if(BUILD_LOADER)
         add_subdirectory(loader)
