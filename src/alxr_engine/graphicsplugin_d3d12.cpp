@@ -15,6 +15,7 @@
 #include <variant>
 #include <thread>
 #include <chrono>
+#include <span>
 #include "xr_eigen.h"
 
 #include <DirectXColors.h>
@@ -191,13 +192,15 @@ ComPtr<ID3D12Resource> CreateTextureUploadBuffer
 struct SwapchainImageContext {
 
     using FoveatedDecodeParamsPtr = std::shared_ptr<ALXR::FoveatedDecodeParams>;
+    DXGI_FORMAT color_format{ DXGI_FORMAT_UNKNOWN };
 
     std::vector<XrSwapchainImageBaseHeader*> Create
     (
-        ID3D12Device* d3d12Device, const std::uint32_t capacity, const std::uint32_t viewProjbufferSize,
+        ID3D12Device* d3d12Device, std::uint64_t colorFmt, const std::uint32_t capacity, const std::uint32_t viewProjbufferSize,
         const FoveatedDecodeParamsPtr fdParamPtr = nullptr // don't pass by ref.
     ) {
         m_d3d12Device = d3d12Device;
+        color_format = static_cast<DXGI_FORMAT>(colorFmt);
 
         m_swapchainImages.resize(capacity, {
             .type = XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR,
@@ -209,9 +212,6 @@ struct SwapchainImageContext {
             bases[i] = reinterpret_cast<XrSwapchainImageBaseHeader*>(&m_swapchainImages[i]);
         }
 
-        CHECK_HRCMD(m_d3d12Device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, __uuidof(ID3D12CommandAllocator),
-                                                          reinterpret_cast<void**>(m_commandAllocator.ReleaseAndGetAddressOf())));
-        m_commandAllocator->SetName(L"SwapchainImageCtx_CmdAllocator");
         m_viewProjectionCBuffer = CreateBuffer(m_d3d12Device, viewProjbufferSize, D3D12_HEAP_TYPE_UPLOAD);
         m_viewProjectionCBuffer->SetName(L"SwapchainImageCtx_ViewProjectionCBuffer");
 
@@ -230,7 +230,12 @@ struct SwapchainImageContext {
         return (uint32_t)(p - &m_swapchainImages[0]);
     }
 
-    ID3D12Resource* GetDepthStencilTexture(ID3D12Resource* colorTexture) {
+    ComPtr<ID3D12Resource> GetDepthStencilTexture
+    (
+        const ComPtr<ID3D12Resource>& colorTexture,
+        const bool visiblityMaskEnabled,
+        bool& isNewResource
+    ) {
         if (!m_depthStencilTexture) {
             // This back-buffer has no corresponding depth-stencil texture, so create one with matching dimensions.
             const D3D12_RESOURCE_DESC colorDesc = colorTexture->GetDesc();
@@ -239,38 +244,38 @@ struct SwapchainImageContext {
                 .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
                 .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN
             };
-            const D3D12_RESOURCE_DESC depthDesc {
+            const D3D12_RESOURCE_DESC depthDesc{
                 .Dimension = colorDesc.Dimension,
                 .Alignment = colorDesc.Alignment,
                 .Width = colorDesc.Width,
                 .Height = colorDesc.Height,
                 .DepthOrArraySize = colorDesc.DepthOrArraySize,
                 .MipLevels = 1,
-                .Format = DXGI_FORMAT_R32_TYPELESS,
+                .Format = visiblityMaskEnabled ?
+                    DXGI_FORMAT_D32_FLOAT_S8X24_UINT : DXGI_FORMAT_R32_TYPELESS,
                 .SampleDesc{.Count = 1},
                 .Layout = colorDesc.Layout,
                 .Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL,
             };
-            constexpr const D3D12_CLEAR_VALUE clearValue {
-                .Format = DXGI_FORMAT_D32_FLOAT,
-                .DepthStencil{.Depth = 1.0f}
+            const D3D12_CLEAR_VALUE clearValue = {
+                .Format = visiblityMaskEnabled ?
+                    DXGI_FORMAT_D32_FLOAT_S8X24_UINT : DXGI_FORMAT_D32_FLOAT,
+                .DepthStencil = {
+                    .Depth = 1.0f,
+                    .Stencil = 0,
+                },
             };
-            CHECK_HRCMD(m_d3d12Device->CreateCommittedResource(
+            if (FAILED(m_d3d12Device->CreateCommittedResource(
                 &heapProp, D3D12_HEAP_FLAG_NONE, &depthDesc, D3D12_RESOURCE_STATE_DEPTH_WRITE, &clearValue,
-                __uuidof(ID3D12Resource), reinterpret_cast<void**>(m_depthStencilTexture.ReleaseAndGetAddressOf())));
+                __uuidof(ID3D12Resource), reinterpret_cast<void**>(m_depthStencilTexture.ReleaseAndGetAddressOf())))) {
+                return nullptr;
+            }
 
             m_depthStencilTexture->SetName(L"SwapchainImageCtx_DepthStencilTexture");
+            isNewResource = true;
         }
-
-        return m_depthStencilTexture.Get();
+        return m_depthStencilTexture;
     }
-
-    ID3D12CommandAllocator* GetCommandAllocator() const { return m_commandAllocator.Get(); }
-
-    std::uint64_t GetFrameFenceValue() const { return m_fenceValue; }
-    void SetFrameFenceValue(std::uint64_t fenceValue) { m_fenceValue = fenceValue; }
-
-    void ResetCommandAllocator() { CHECK_HRCMD(m_commandAllocator->Reset()); }
 
     void RequestModelCBuffer(const std::uint32_t requiredSize) {
         if (!m_modelCBuffer || (requiredSize > m_modelCBuffer->GetDesc().Width)) {
@@ -305,12 +310,10 @@ struct SwapchainImageContext {
     ID3D12Device* m_d3d12Device{nullptr};
 
     std::vector<XrSwapchainImageD3D12KHR> m_swapchainImages;
-    ComPtr<ID3D12CommandAllocator> m_commandAllocator;
     ComPtr<ID3D12Resource> m_depthStencilTexture;
     ComPtr<ID3D12Resource> m_modelCBuffer;
     ComPtr<ID3D12Resource> m_viewProjectionCBuffer;
     ComPtr<ID3D12Resource> m_foveationParamCBuffer;
-    uint64_t m_fenceValue = 0;
 };
 
 struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
@@ -395,7 +398,7 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
             sizeof(ALXR::MultiViewProjectionConstantBuffer) : sizeof(ALXR::ViewProjectionConstantBuffer));
     }
 
-    void InitializeDevice(XrInstance instance, XrSystemId systemId, const XrEnvironmentBlendMode newMode, const bool /*enableVisibilityMask*/) override {
+    void InitializeDevice(XrInstance instance, XrSystemId systemId, const XrEnvironmentBlendMode newMode, const bool enableVisibilityMask) override {
         PFN_xrGetD3D12GraphicsRequirementsKHR pfnGetD3D12GraphicsRequirementsKHR = nullptr;
         CHECK_XRCMD(xrGetInstanceProcAddr(instance, "xrGetD3D12GraphicsRequirementsKHR",
             reinterpret_cast<PFN_xrVoidFunction*>(&pfnGetD3D12GraphicsRequirementsKHR)));
@@ -409,6 +412,7 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
         InitializeD3D12DeviceForAdapter(adapter.Get(), graphicsRequirements.minFeatureLevel, m_device.ReleaseAndGetAddressOf());
         m_dx12deviceluid = graphicsRequirements.adapterLuid;
 
+        m_enableVisibilityMask = enableVisibilityMask;
         CheckMultiViewSupport();
         CHECK(m_coreShaders.IsValid());
         
@@ -434,7 +438,7 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
         {
             constexpr const D3D12_DESCRIPTOR_HEAP_DESC heapDesc{
                 .Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-                .NumDescriptors = 1,                
+                .NumDescriptors = 2,                
                 .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE
             };
             CHECK_HRCMD(m_device->CreateDescriptorHeap(&heapDesc, __uuidof(ID3D12DescriptorHeap),
@@ -443,7 +447,7 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
         {
             constexpr const D3D12_DESCRIPTOR_HEAP_DESC heapDesc{
                 .Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV,
-                .NumDescriptors = 1,                
+                .NumDescriptors = 2,                
                 .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE
             };
             CHECK_HRCMD(m_device->CreateDescriptorHeap(&heapDesc, __uuidof(ID3D12DescriptorHeap),
@@ -515,11 +519,12 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
             __uuidof(ID3D12RootSignature),
             reinterpret_cast<void**>(m_rootSignature.ReleaseAndGetAddressOf())));
 
-        SwapchainImageContext initializeContext;
-        const auto _ = initializeContext.Create(m_device.Get(), 1, GetViewProjectionBufferSize());
+        CHECK_HRCMD(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, __uuidof(ID3D12CommandAllocator),
+            reinterpret_cast<void**>(m_commandAllocator.ReleaseAndGetAddressOf())));
+        m_commandAllocator->SetName(L"SwapchainImageCtx_CmdAllocator");
         
         ComPtr<ID3D12GraphicsCommandList> cmdList;
-        CHECK_HRCMD(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, initializeContext.GetCommandAllocator(), nullptr,
+        CHECK_HRCMD(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_commandAllocator.Get(), nullptr,
             __uuidof(ID3D12GraphicsCommandList),
             reinterpret_cast<void**>(cmdList.ReleaseAndGetAddressOf())));
 
@@ -556,7 +561,7 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
         ID3D12CommandList* cmdLists[] = { cmdList.Get() };
         m_cmdQueue->ExecuteCommandLists((UINT)std::size(cmdLists), cmdLists);
 
-        CHECK_HRCMD(m_device->CreateFence(m_fenceValue, D3D12_FENCE_FLAG_NONE, __uuidof(ID3D12Fence),
+        CHECK_HRCMD(m_device->CreateFence(m_frameFenceValue.load(), D3D12_FENCE_FLAG_NONE, __uuidof(ID3D12Fence),
             reinterpret_cast<void**>(m_fence.ReleaseAndGetAddressOf())));
         m_fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
         CHECK(m_fenceEvent != nullptr);
@@ -611,21 +616,21 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
     }
 
     std::vector<XrSwapchainImageBaseHeader*> AllocateSwapchainImageStructs(
-        uint32_t capacity, const XrSwapchainCreateInfo& /*swapchainCreateInfo*/) override {
+        uint32_t capacity, const XrSwapchainCreateInfo& swapchainCreateInfo) override {
         // Allocate and initialize the buffer of image structs (must be sequential in memory for xrEnumerateSwapchainImages).
         // Return back an array of pointers to each swapchain image struct so the consumer doesn't need to know the type/size.
-
-        m_swapchainImageContexts.emplace_back();
-        SwapchainImageContext& swapchainImageContext = m_swapchainImageContexts.back();
+        auto newSwapchainImageContext = std::make_shared<SwapchainImageContext>();
+        m_swapchainImageContexts.push_back(newSwapchainImageContext);
+        SwapchainImageContext& swapchainImageContext = *newSwapchainImageContext;
 
         std::vector<XrSwapchainImageBaseHeader*> bases = swapchainImageContext.Create
         (
-            m_device.Get(), capacity, GetViewProjectionBufferSize(), m_fovDecodeParams
+            m_device.Get(), swapchainCreateInfo.format, capacity, GetViewProjectionBufferSize(), m_fovDecodeParams
         );
 
         // Map every swapchainImage base pointer to this context
         for (auto& base : bases) {
-            m_swapchainImageContextMap[base] = &swapchainImageContext;
+            m_swapchainImageContextMap[base] = newSwapchainImageContext;
         }
 
         return bases;
@@ -634,13 +639,11 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
     virtual void ClearSwapchainImageStructs() override
     {
         m_swapchainImageContextMap.clear();
-        for (auto& swapchainContext : m_swapchainImageContexts) {
-            CpuWaitForFence(swapchainContext.GetFrameFenceValue());
-        }
+        CpuWaitForFence(m_frameFenceValue.load());
         m_swapchainImageContexts.clear();
     }
 
-    struct PipelineStateStream
+    struct PipelineStateStream final
     {
         CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE pRootSignature;
         CD3DX12_PIPELINE_STATE_STREAM_VS VS;
@@ -667,65 +670,42 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
         PipelineStateStreamT& pipelineStateStream,
         const DXGI_FORMAT swapchainFormat,
         const std::array<D3D12_SHADER_BYTECODE, 2>& shaders,
-        const std::array<const D3D12_INPUT_ELEMENT_DESC, N>& inputElementDescs
+        const std::array<const D3D12_INPUT_ELEMENT_DESC, N>& inputElementDescs,
+        const bool enableVisibilityMask
     )
     {
         pipelineStateStream.VS = shaders[0];
         pipelineStateStream.PS = shaders[1];
         {
-            D3D12_BLEND_DESC blendState{
-                .AlphaToCoverageEnable = false,
-                .IndependentBlendEnable = false
-            };
-            for (size_t i = 0; i < std::size(blendState.RenderTarget); ++i) {
-                blendState.RenderTarget[i] = {
-                    .BlendEnable = false,
-                    .SrcBlend = D3D12_BLEND_ONE,
-                    .DestBlend = D3D12_BLEND_ZERO,
-                    .BlendOp = D3D12_BLEND_OP_ADD,
-                    .SrcBlendAlpha = D3D12_BLEND_ONE,
-                    .DestBlendAlpha = D3D12_BLEND_ZERO,
-                    .BlendOpAlpha = D3D12_BLEND_OP_ADD,
-                    .LogicOp = D3D12_LOGIC_OP_NOOP,
-                    .RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL
-                };
-            }
-            const CD3DX12_BLEND_DESC desc(blendState);
+            const CD3DX12_BLEND_DESC desc(D3D12_DEFAULT);
             pipelineStateStream.BlendState = desc;
         }
         pipelineStateStream.SampleMask = 0xFFFFFFFF;
         {
-            constexpr static const D3D12_RASTERIZER_DESC rasterizerState {
-                .FillMode = D3D12_FILL_MODE_SOLID,
-                .CullMode = D3D12_CULL_MODE_BACK,
-                .FrontCounterClockwise = FALSE,
-                .DepthBias = D3D12_DEFAULT_DEPTH_BIAS,
-                .DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP,
-                .SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS,
-                .DepthClipEnable = TRUE,
-                .MultisampleEnable = FALSE,
-                .AntialiasedLineEnable = FALSE,
-                .ForcedSampleCount = 0,
-                .ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF,
-            };
-            const CD3DX12_RASTERIZER_DESC desc(rasterizerState);
+            const CD3DX12_RASTERIZER_DESC desc(D3D12_DEFAULT);
             pipelineStateStream.RasterizerState = desc;
         }
         {
-            constexpr static const D3D12_DEPTH_STENCILOP_DESC stencil_op{
-                D3D12_STENCIL_OP_KEEP, D3D12_STENCIL_OP_KEEP, D3D12_STENCIL_OP_KEEP, D3D12_COMPARISON_FUNC_ALWAYS
-            };
-            constexpr static const D3D12_DEPTH_STENCIL_DESC depthStencilState {
-                .DepthEnable = TRUE,
-                .DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL,
-                .DepthFunc = D3D12_COMPARISON_FUNC_LESS,
-                .StencilEnable = FALSE,
-                .StencilReadMask = D3D12_DEFAULT_STENCIL_READ_MASK,
-                .StencilWriteMask = D3D12_DEFAULT_STENCIL_WRITE_MASK,
-                .FrontFace = stencil_op,
-                .BackFace = stencil_op
-            };
-            const CD3DX12_DEPTH_STENCIL_DESC desc(depthStencilState);
+            CD3DX12_DEPTH_STENCIL_DESC desc(D3D12_DEFAULT);
+            if (enableVisibilityMask) {
+                constexpr const D3D12_DEPTH_STENCILOP_DESC stencilOpDesc = {
+                    .StencilFailOp = D3D12_STENCIL_OP_KEEP,         // Keep stencil value if stencil test fails
+                    .StencilDepthFailOp = D3D12_STENCIL_OP_KEEP,    // Keep stencil value if depth test fails
+                    .StencilPassOp = D3D12_STENCIL_OP_KEEP,         // Keep stencil value if both tests pass
+                    .StencilFunc = D3D12_COMPARISON_FUNC_NOT_EQUAL, // Only pass if stencil value equals reference
+                };
+                constexpr const D3D12_DEPTH_STENCIL_DESC stencilDesc = {
+                    .DepthEnable = TRUE,
+                    .DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL,
+                    .DepthFunc = D3D12_COMPARISON_FUNC_LESS,
+                    .StencilEnable = TRUE,
+                    .StencilReadMask = D3D12_DEFAULT_STENCIL_READ_MASK, // Allow reading from all stencil bit
+                    .StencilWriteMask = 0x00,                           // No writing to stencil buffer (read-only
+                    .FrontFace = stencilOpDesc,
+                    .BackFace = stencilOpDesc,
+                };
+                desc = CD3DX12_DEPTH_STENCIL_DESC{ stencilDesc };
+            }
             pipelineStateStream.DepthStencilState = desc;
         }
         pipelineStateStream.InputLayout = { 
@@ -734,7 +714,8 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
         };
         pipelineStateStream.IBStripCutValue = D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_0xFFFF;
         pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-        pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+        pipelineStateStream.DSVFormat = enableVisibilityMask ?
+            DXGI_FORMAT_D32_FLOAT_S8X24_UINT : DXGI_FORMAT_D32_FLOAT;
         pipelineStateStream.SampleDesc = { 1, 0 };
         pipelineStateStream.NodeMask = 0;
         pipelineStateStream.CachedPSO = { nullptr, 0 };
@@ -782,7 +763,7 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
             CHECK(device2 != nullptr);
 
             PipelineStateStream pipelineStateDesc{ .pRootSignature = m_rootSignature.Get() };
-            MakeDefaultPipelineStateDesc(pipelineStateDesc, swapchainFormat, shaders, inputElementDescs);
+            MakeDefaultPipelineStateDesc(pipelineStateDesc, swapchainFormat, shaders, inputElementDescs, m_enableVisibilityMask);
             const D3D12_PIPELINE_STATE_STREAM_DESC pipelineStateStreamDesc{
                 .SizeInBytes = sizeof(PipelineStateStream),
                 .pPipelineStateSubobjectStream = &pipelineStateDesc
@@ -792,7 +773,7 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
         }
         else {
             D3D12_GRAPHICS_PIPELINE_STATE_DESC pipelineStateDesc{ .pRootSignature = m_rootSignature.Get() };
-            MakeDefaultPipelineStateDesc(pipelineStateDesc, swapchainFormat, shaders, inputElementDescs);
+            MakeDefaultPipelineStateDesc(pipelineStateDesc, swapchainFormat, shaders, inputElementDescs, m_enableVisibilityMask);
             CHECK_HRCMD(m_device->CreateGraphicsPipelineState(&pipelineStateDesc, __uuidof(ID3D12PipelineState),
                 reinterpret_cast<void**>(pipelineState.ReleaseAndGetAddressOf())));
         }
@@ -872,21 +853,303 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
         }
     }
 
+    inline static D3D12_RENDER_TARGET_VIEW_DESC MakeRenderTargetViewDesc(const ComPtr<ID3D12Resource>& colorTexture, const std::uint64_t swapchainFormat) {
+        const D3D12_RESOURCE_DESC colorTextureDesc = colorTexture->GetDesc();
+        const auto viewFormat = (DXGI_FORMAT)swapchainFormat;
+        if (colorTextureDesc.DepthOrArraySize > 1) {
+            if (colorTextureDesc.SampleDesc.Count > 1) {
+                return {
+                    .Format = viewFormat,
+                    .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DMSARRAY,
+                    .Texture2DMSArray = {
+                        .ArraySize = colorTextureDesc.DepthOrArraySize,
+                    },
+                };
+            } else {
+                return {
+                    .Format = viewFormat,
+                    .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DARRAY,
+                    .Texture2DArray = {
+                        .ArraySize = colorTextureDesc.DepthOrArraySize,
+                    },
+                };
+            }
+        } else {
+            if (colorTextureDesc.SampleDesc.Count > 1) {
+                return {
+                    .Format = viewFormat,
+                    .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DMS,
+                    .Texture2DMS = {},
+                };
+            } else {
+                return {
+                    .Format = viewFormat,
+                    .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D,
+                    .Texture2D = {},
+                };
+            }
+        }
+    }
+
+    inline static D3D12_DEPTH_STENCIL_VIEW_DESC MakeDepthStencilViewDesc(const ComPtr<ID3D12Resource>& depthStencilTexture, const DXGI_FORMAT viewFormat) {
+        const D3D12_RESOURCE_DESC depthStencilTextureDesc = depthStencilTexture->GetDesc();
+        if (depthStencilTextureDesc.DepthOrArraySize > 1) {
+            if (depthStencilTextureDesc.SampleDesc.Count > 1) {
+                return {
+                    .Format = viewFormat,
+                    .ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DMSARRAY,
+                    .Texture2DMSArray = {
+                        .ArraySize = depthStencilTextureDesc.DepthOrArraySize,
+                    },
+                };
+            } else {
+                return {
+                    .Format = viewFormat,
+                    .ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DARRAY,
+                    .Texture2DArray = {
+                        .ArraySize = depthStencilTextureDesc.DepthOrArraySize,
+                    },
+                };
+            }
+        } else {
+            if (depthStencilTextureDesc.SampleDesc.Count > 1) {
+                return {
+                    .Format = viewFormat,
+                    .ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DMS,
+                    .Texture2DMS = {},
+                };
+            } else {
+                return {
+                    .Format = viewFormat,
+                    .ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D,
+                    .Texture2D = {},
+                };
+            }
+        }
+    }
+
+    struct RenderTarget final {
+        CD3DX12_CPU_DESCRIPTOR_HANDLE renderTargetView{ D3D12_DEFAULT };
+        CD3DX12_CPU_DESCRIPTOR_HANDLE depthStencilView{ D3D12_DEFAULT };
+    };
+    using DepthStencilViewList = std::array<RenderTarget, 2>;
+    DepthStencilViewList CreateDepthStencilViewsFromImageArray(
+        std::span<const XrSwapchainImageBaseHeader* const> swapchainImages,
+        const int64_t swapchainFormat
+    ) {
+        assert(m_enableVisibilityMask);
+        assert(swapchainImages.size() > 0 && swapchainImages.size() < 3);
+        assert(m_visibilityMaskState.IsValid());
+
+        const bool isMultiView = swapchainImages.size() == 1;
+
+        const std::uint32_t rtvDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+        const std::uint32_t dsvDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+
+        std::array<RenderTarget, 2> depthStencilViews = {};
+        for (std::uint32_t viewIdx = 0; viewIdx < static_cast<std::uint32_t>(depthStencilViews.size()); ++viewIdx) {
+            const auto swapchainImage = swapchainImages[isMultiView ? 0 : viewIdx];
+            const auto swapchainContextPtr = m_swapchainImageContextMap[swapchainImage].lock();
+            if (swapchainContextPtr == nullptr)
+                return {};
+
+            auto& depthStencilView = depthStencilViews[viewIdx];
+            depthStencilView = {
+                .renderTargetView = {m_visibilityMaskState.rtvHeap->GetCPUDescriptorHandleForHeapStart(), (INT)viewIdx, rtvDescriptorSize},
+                .depthStencilView = {m_visibilityMaskState.dsvHeap->GetCPUDescriptorHandleForHeapStart(), (INT)viewIdx, dsvDescriptorSize},
+            };
+            auto& swapchainContext = *swapchainContextPtr;
+            ComPtr<ID3D12Resource> colorTexture = { reinterpret_cast<const XrSwapchainImageD3D12KHR*>(swapchainImage)->texture };
+            assert(colorTexture != nullptr);
+
+            bool isNewResource = false;
+            ComPtr<ID3D12Resource> depthStencilTexture = swapchainContext.GetDepthStencilTexture(colorTexture, true, isNewResource);
+            if (depthStencilTexture == nullptr)
+                return {};
+
+            auto depthStencilViewDesc = MakeDepthStencilViewDesc(depthStencilTexture, DXGI_FORMAT_D32_FLOAT_S8X24_UINT);
+            if (isMultiView) {
+                if (depthStencilViewDesc.ViewDimension == D3D12_DSV_DIMENSION_TEXTURE2DMSARRAY) {
+                    auto& texture2DArray = depthStencilViewDesc.Texture2DMSArray;
+                    texture2DArray.FirstArraySlice = viewIdx;
+                    texture2DArray.ArraySize = 1;
+                } else {
+                    assert(depthStencilViewDesc.ViewDimension == D3D12_DSV_DIMENSION_TEXTURE2DARRAY);
+                    auto& texture2DArray = depthStencilViewDesc.Texture2DArray;
+                    texture2DArray.FirstArraySlice = viewIdx;
+                    texture2DArray.ArraySize = 1;
+                }
+            }
+            m_device->CreateDepthStencilView(depthStencilTexture.Get(), &depthStencilViewDesc, depthStencilView.depthStencilView);
+
+            auto renderTargetViewDesc = MakeRenderTargetViewDesc(colorTexture, swapchainFormat);
+            if (isMultiView) {
+                if (renderTargetViewDesc.ViewDimension == D3D12_RTV_DIMENSION_TEXTURE2DMSARRAY) {
+                    auto& texture2DArray = renderTargetViewDesc.Texture2DMSArray;
+                    texture2DArray.FirstArraySlice = viewIdx;
+                    texture2DArray.ArraySize = 1;
+                } else {
+                    assert(renderTargetViewDesc.ViewDimension == D3D12_RTV_DIMENSION_TEXTURE2DARRAY);
+                    auto& texture2DArray = renderTargetViewDesc.Texture2DArray;
+                    texture2DArray.FirstArraySlice = viewIdx;
+                    texture2DArray.ArraySize = 1;
+                }
+            }
+            m_device->CreateRenderTargetView(colorTexture.Get(), &renderTargetViewDesc, depthStencilView.renderTargetView);
+        }
+        return depthStencilViews;
+    }
+
+    ComPtr<ID3D12GraphicsCommandList> RenderVisibilityMaskPassIfDirty(
+        std::span<const XrSwapchainImageBaseHeader* const> swapchainImages,
+        const std::array<XrCompositionLayerProjectionView, 2>& layerViews,
+        const int64_t swapchainFormat
+    ) {
+        if (!m_enableVisibilityMask ||
+            !m_visibilityMaskState.isDirty ||
+            !m_visibilityMaskState.IsValid())
+            return nullptr;
+
+        const auto depthStencilViews = CreateDepthStencilViewsFromImageArray(swapchainImages, swapchainFormat);
+        if (depthStencilViews[0].renderTargetView.ptr == 0)
+            return nullptr;
+
+        ComPtr<ID3D12GraphicsCommandList> cmdList;
+        if (FAILED(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_commandAllocator.Get(), nullptr,
+            __uuidof(ID3D12GraphicsCommandList),
+            reinterpret_cast<void**>(cmdList.ReleaseAndGetAddressOf())))) {
+            return nullptr;
+        }
+
+        cmdList->SetPipelineState(m_visibilityMaskState.pipelineState.Get());
+        cmdList->SetGraphicsRootSignature(m_rootSignature.Get());
+
+        const bool isMultiView = swapchainImages.size() == 1;
+        for (std::size_t viewIdx = 0; viewIdx < depthStencilViews.size(); ++viewIdx) {
+            const auto swapchainImage = swapchainImages[isMultiView ? 0 : viewIdx];
+            const auto swapchainContextPtr = m_swapchainImageContextMap[swapchainImage].lock();
+            if (swapchainContextPtr == nullptr)
+                continue;
+
+            const auto& vbuff = m_visibilityMaskState.vertexBuffers[viewIdx];
+            if (vbuff.vb == nullptr || vbuff.vertexCount == 0)
+                continue;
+
+            const auto& renderTarget = depthStencilViews[viewIdx];
+            cmdList->OMSetRenderTargets(1, &renderTarget.renderTargetView, true, &renderTarget.depthStencilView);
+            cmdList->OMSetStencilRef(1);
+
+            const auto& imageRect = layerViews[viewIdx].subImage.imageRect;
+            const D3D12_VIEWPORT viewport = {
+                (float)imageRect.offset.x,     (float)imageRect.offset.y,
+                (float)imageRect.extent.width, (float)imageRect.extent.height,
+                0, 1
+            };
+            const D3D12_RECT scissorRect = {
+                imageRect.offset.x,  imageRect.offset.y,
+                imageRect.offset.x + imageRect.extent.width,
+                imageRect.offset.y + imageRect.extent.height
+            };
+            cmdList->RSSetViewports(1, &viewport);
+            cmdList->RSSetScissorRects(1, &scissorRect);
+            cmdList->ClearDepthStencilView(renderTarget.depthStencilView, D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+
+            if (m_visibilityMaskState.projectionCBuffer) {
+                constexpr const std::size_t AlignSize = D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT;
+                constexpr const std::uint32_t projPerViewSize = AlignTo<AlignSize>(sizeof(DirectX::XMFLOAT4X4A));
+
+                const alignas(AlignSize) DirectX::XMFLOAT4X4A projection = MakeProj_XMFLOAT4X4A(layerViews[viewIdx]);
+                const std::size_t offset = viewIdx * projPerViewSize;
+                auto& projectCBubffer = m_visibilityMaskState.projectionCBuffer;
+
+                constexpr const D3D12_RANGE NoReadRange{ 0, 0 };
+                std::uint8_t* data = nullptr;
+                if (FAILED(projectCBubffer->Map(0, &NoReadRange, reinterpret_cast<void**>(&data))) ||
+                    data == nullptr)
+                    continue;
+                std::memcpy(data + offset, &projection, sizeof(projection));
+                const D3D12_RANGE writeRange{ offset, offset + projPerViewSize };
+                projectCBubffer->Unmap(0, &writeRange);
+                
+                cmdList->SetGraphicsRootConstantBufferView(RootParamIndex::ModelTransform, projectCBubffer->GetGPUVirtualAddress() + offset);
+            }
+
+            const D3D12_VERTEX_BUFFER_VIEW vertexBufferView[] = {
+                {
+                    vbuff.vb->GetGPUVirtualAddress(),
+                    sizeof(XrVector2f) * vbuff.vertexCount,
+                    sizeof(XrVector2f)
+                }
+            };
+            const D3D12_INDEX_BUFFER_VIEW indexBufferView = {
+                vbuff.ib->GetGPUVirtualAddress(),
+                sizeof(std::uint32_t) * vbuff.indexCount,
+                DXGI_FORMAT_R32_UINT
+            };
+            cmdList->IASetVertexBuffers(0, (UINT)std::size(vertexBufferView), vertexBufferView);
+            cmdList->IASetIndexBuffer(&indexBufferView);
+            cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            cmdList->DrawIndexedInstanced(vbuff.indexCount, 1, 0, 0, 0);
+        }
+        if (FAILED(cmdList->Close()))
+            return nullptr;
+
+        m_visibilityMaskState.isDirty = false;
+        return cmdList;
+    }
+
     template < typename RenderFun >
     inline void RenderViewImpl
     (
-        const XrCompositionLayerProjectionView& layerView, const XrSwapchainImageBaseHeader* swapchainImage, const int64_t swapchainFormat,
+        const std::array<XrCompositionLayerProjectionView,2>& layerViews,
+        std::span<const XrSwapchainImageBaseHeader* const> swapchainImages,
+        const int64_t swapchainFormat,
         RenderFun&& renderFn,
         const RenderPipelineType pt = RenderPipelineType::Default,
         const PassthroughMode newMode = PassthroughMode::None
     )
     {
-        auto& swapchainContext = *m_swapchainImageContextMap[swapchainImage];
-        CpuWaitForFence(swapchainContext.GetFrameFenceValue());
-        swapchainContext.ResetCommandAllocator();
+        CpuWaitForFence(m_frameFenceValue.load());
+        if (FAILED(m_commandAllocator->Reset()))
+            return;
 
-        ComPtr<ID3D12GraphicsCommandList> cmdList;
-        CHECK_HRCMD(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, swapchainContext.GetCommandAllocator(), nullptr,
+        const std::uint32_t rtvDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+        const std::uint32_t dsvDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+        std::array<RenderTarget, 2> renderTargets = {};
+        for (std::uint32_t viewIdx = 0; viewIdx < static_cast<std::uint32_t>(swapchainImages.size()); ++viewIdx) {
+            const auto swapchainImage = swapchainImages[viewIdx];
+            const auto swapchainContextPtr = m_swapchainImageContextMap[swapchainImage].lock();
+            if (swapchainContextPtr == nullptr)
+                continue;
+            auto& renderTarget = renderTargets[viewIdx];
+            renderTarget = {
+                .renderTargetView = {m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), (INT)viewIdx, rtvDescriptorSize},
+                .depthStencilView = {m_dsvHeap->GetCPUDescriptorHandleForHeapStart(), (INT)viewIdx, dsvDescriptorSize},
+            };
+            auto& swapchainContext = *swapchainContextPtr;
+            ComPtr<ID3D12Resource> colorTexture = { reinterpret_cast<const XrSwapchainImageD3D12KHR*>(swapchainImage)->texture };
+
+            const auto renderTargetViewDesc = MakeRenderTargetViewDesc(colorTexture, swapchainFormat);
+            m_device->CreateRenderTargetView(colorTexture.Get(), &renderTargetViewDesc, renderTarget.renderTargetView);
+
+            bool isNewResource = false;
+            ComPtr<ID3D12Resource> depthStencilTexture = swapchainContext.GetDepthStencilTexture(colorTexture, m_enableVisibilityMask, isNewResource);
+            if (depthStencilTexture == nullptr)
+                return;
+            const auto dsvFormat = m_enableVisibilityMask ?
+                    DXGI_FORMAT_D32_FLOAT_S8X24_UINT : DXGI_FORMAT_D32_FLOAT;
+            const auto depthStencilViewDesc = MakeDepthStencilViewDesc(depthStencilTexture, dsvFormat);
+            m_device->CreateDepthStencilView(depthStencilTexture.Get(), &depthStencilViewDesc, renderTarget.depthStencilView);
+
+            if (m_enableVisibilityMask && isNewResource) {
+                m_visibilityMaskState.isDirty = true;
+            }
+        }
+
+        const auto vizMaskCmdList = RenderVisibilityMaskPassIfDirty(swapchainImages, layerViews, swapchainFormat);
+        
+        ComPtr<ID3D12GraphicsCommandList> cmdList{};
+        CHECK_HRCMD(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_commandAllocator.Get(), nullptr,
             __uuidof(ID3D12GraphicsCommandList),
             reinterpret_cast<void**>(cmdList.ReleaseAndGetAddressOf())));
 
@@ -894,79 +1157,43 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
         cmdList->SetPipelineState(pipelineState);
         cmdList->SetGraphicsRootSignature(m_rootSignature.Get());
 
-        ID3D12Resource* const colorTexture = reinterpret_cast<const XrSwapchainImageD3D12KHR*>(swapchainImage)->texture;
-        const D3D12_RESOURCE_DESC colorTextureDesc = colorTexture->GetDesc();
+        assert(layerViews.size() >= swapchainImages.size());
+        for (std::uint32_t viewIdx = 0; viewIdx < static_cast<std::uint32_t>(swapchainImages.size()); ++viewIdx) {
+            const auto& renderTarget = renderTargets[viewIdx];
+            const auto& layerView = layerViews[viewIdx];
+            const auto swapchainImage = swapchainImages[viewIdx];
+            const auto swapchainContextPtr = m_swapchainImageContextMap[swapchainImage].lock();
+            if (swapchainContextPtr == nullptr)
+                continue;
+            auto& swapchainContext = *swapchainContextPtr;
 
-        const D3D12_VIEWPORT viewport = { (float)layerView.subImage.imageRect.offset.x,
-                                         (float)layerView.subImage.imageRect.offset.y,
-                                         (float)layerView.subImage.imageRect.extent.width,
-                                         (float)layerView.subImage.imageRect.extent.height,
-                                         0,
-                                         1 };
-        cmdList->RSSetViewports(1, &viewport);
+            const D3D12_VIEWPORT viewport = { (float)layerView.subImage.imageRect.offset.x,
+                                             (float)layerView.subImage.imageRect.offset.y,
+                                             (float)layerView.subImage.imageRect.extent.width,
+                                             (float)layerView.subImage.imageRect.extent.height,
+                                             0,
+                                             1 };
+            cmdList->RSSetViewports(1, &viewport);
 
-        const D3D12_RECT scissorRect = { layerView.subImage.imageRect.offset.x, layerView.subImage.imageRect.offset.y,
-                                        layerView.subImage.imageRect.offset.x + layerView.subImage.imageRect.extent.width,
-                                        layerView.subImage.imageRect.offset.y + layerView.subImage.imageRect.extent.height };
-        cmdList->RSSetScissorRects(1, &scissorRect);
-
-        // Create RenderTargetView with original swapchain format (swapchain is typeless).
-        D3D12_CPU_DESCRIPTOR_HANDLE renderTargetView = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
-        D3D12_RENDER_TARGET_VIEW_DESC renderTargetViewDesc{};
-        renderTargetViewDesc.Format = (DXGI_FORMAT)swapchainFormat;
-        if (colorTextureDesc.DepthOrArraySize > 1) {
-            if (colorTextureDesc.SampleDesc.Count > 1) {
-                renderTargetViewDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DMSARRAY;
-                renderTargetViewDesc.Texture2DMSArray.ArraySize = colorTextureDesc.DepthOrArraySize;
-            }
-            else {
-                renderTargetViewDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
-                renderTargetViewDesc.Texture2DArray.ArraySize = colorTextureDesc.DepthOrArraySize;
-            }
+            const D3D12_RECT scissorRect = { layerView.subImage.imageRect.offset.x, layerView.subImage.imageRect.offset.y,
+                                            layerView.subImage.imageRect.offset.x + layerView.subImage.imageRect.extent.width,
+                                            layerView.subImage.imageRect.offset.y + layerView.subImage.imageRect.extent.height };
+            cmdList->RSSetScissorRects(1, &scissorRect);
+            if (m_enableVisibilityMask)
+                cmdList->OMSetStencilRef(1);
+            renderFn(viewIdx, layerView, cmdList, renderTarget.renderTargetView, renderTarget.depthStencilView, swapchainContext);
         }
-        else {
-            if (colorTextureDesc.SampleDesc.Count > 1) {
-                renderTargetViewDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DMS;
-            }
-            else {
-                renderTargetViewDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
-            }
-        }
-        m_device->CreateRenderTargetView(colorTexture, &renderTargetViewDesc, renderTargetView);
-
-        ID3D12Resource* depthStencilTexture = swapchainContext.GetDepthStencilTexture(colorTexture);
-        const D3D12_RESOURCE_DESC depthStencilTextureDesc = depthStencilTexture->GetDesc();
-        D3D12_CPU_DESCRIPTOR_HANDLE depthStencilView = m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
-        D3D12_DEPTH_STENCIL_VIEW_DESC depthStencilViewDesc{};
-        depthStencilViewDesc.Format = DXGI_FORMAT_D32_FLOAT;
-        if (depthStencilTextureDesc.DepthOrArraySize > 1) {
-            if (depthStencilTextureDesc.SampleDesc.Count > 1) {
-                depthStencilViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DMSARRAY;
-                depthStencilViewDesc.Texture2DMSArray.ArraySize = colorTextureDesc.DepthOrArraySize;
-            }
-            else {
-                depthStencilViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DARRAY;
-                depthStencilViewDesc.Texture2DArray.ArraySize = colorTextureDesc.DepthOrArraySize;
-            }
-        }
-        else {
-            if (depthStencilTextureDesc.SampleDesc.Count > 1) {
-                depthStencilViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DMS;
-            }
-            else {
-                depthStencilViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-            }
-        }
-        m_device->CreateDepthStencilView(depthStencilTexture, &depthStencilViewDesc, depthStencilView);
-
-        renderFn(cmdList, renderTargetView, depthStencilView, swapchainContext);
-
         CHECK_HRCMD(cmdList->Close());
-        ID3D12CommandList* const cmdLists[] = { cmdList.Get() };
-        m_cmdQueue->ExecuteCommandLists((UINT)std::size(cmdLists), cmdLists);
+
+        std::uint32_t cmdListCount = 0;
+        ID3D12CommandList* cmdLists[2] = {};
+        if (vizMaskCmdList)
+            cmdLists[cmdListCount++] = vizMaskCmdList.Get();
+        cmdLists[cmdListCount++] = cmdList.Get();
+        assert(cmdListCount > 0);
+        m_cmdQueue->ExecuteCommandLists(cmdListCount, cmdLists);
 
         SignalFence();
-        swapchainContext.SetFrameFenceValue(m_fenceValue);
     }
 
     inline std::size_t ClearColorIndex(const PassthroughMode /*ptMode*/) const {
@@ -975,11 +1202,23 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
         return m_clearColorIndex;
     }
 
-    inline DirectX::XMFLOAT4X4A XM_CALLCONV MakeViewProjMatrix(const XrCompositionLayerProjectionView& layerView) {
-        const XMMATRIX spaceToView = XMMatrixInverse(nullptr, ALXR::LoadXrPose(layerView.pose));
+    inline DirectX::XMMATRIX XM_CALLCONV MakeProjMatrix(const XrCompositionLayerProjectionView& layerView)
+    {
         Eigen::Matrix4f projectionMatrix = ALXR::CreateProjectionFov(ALXR::GraphicsAPI::D3D, layerView.fov, 0.05f, 100.0f);
+        return ALXR::LoadXrMatrix(projectionMatrix);
+    }
+
+    inline DirectX::XMFLOAT4X4A XM_CALLCONV MakeProj_XMFLOAT4X4A(const XrCompositionLayerProjectionView& layerView) {
+        DirectX::XMFLOAT4X4A proj;
+        XMStoreFloat4x4(&proj, MakeProjMatrix(layerView));
+        return proj;
+    }
+
+    inline DirectX::XMFLOAT4X4A XM_CALLCONV MakeViewProjMatrix(const XrCompositionLayerProjectionView& layerView)
+    {
+        const XMMATRIX spaceToView = XMMatrixInverse(nullptr, ALXR::LoadXrPose(layerView.pose));
         DirectX::XMFLOAT4X4A viewProj;
-        XMStoreFloat4x4(&viewProj, XMMatrixTranspose(spaceToView * ALXR::LoadXrMatrix(projectionMatrix)));
+        XMStoreFloat4x4(&viewProj, XMMatrixTranspose(spaceToView * MakeProjMatrix(layerView)));
         return viewProj;
     }
 
@@ -993,8 +1232,11 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
         assert(m_isMultiViewSupported);
         using CpuDescHandle = D3D12_CPU_DESCRIPTOR_HANDLE;
         using CommandListPtr = ComPtr<ID3D12GraphicsCommandList>;
-        RenderViewImpl(layerViews[0], swapchainImage, swapchainFormat, [&]
+        const std::array<const XrSwapchainImageBaseHeader*,1> swapchainImages = {swapchainImage};
+        RenderViewImpl(layerViews, swapchainImages, swapchainFormat, [&]
         (
+            const std::uint32_t viewID,
+            const XrCompositionLayerProjectionView& layerView,
             const CommandListPtr& cmdList,
             const CpuDescHandle& renderTargetView,
             const CpuDescHandle& depthStencilView,
@@ -1036,48 +1278,46 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
         const std::int64_t swapchainFormat, const PassthroughMode ptMode,
         const std::vector<Cube>& cubes
     ) override
-    {
-        for (std::size_t viewID = 0; viewID < layerViews.size(); ++viewID) {
-            const auto& layerView = layerViews[viewID];
+    {           
+        using CpuDescHandle = D3D12_CPU_DESCRIPTOR_HANDLE;
+        using CommandListPtr = ComPtr<ID3D12GraphicsCommandList>;
+        RenderViewImpl(layerViews, swapchainImages, swapchainFormat, [&]
+        (
+            const std::uint32_t viewID,
+            const XrCompositionLayerProjectionView& layerView,
+            const CommandListPtr& cmdList,
+            const CpuDescHandle& renderTargetView,
+            const CpuDescHandle& depthStencilView,
+            SwapchainImageContext& swapchainContext
+        ) {
             assert(layerView.subImage.imageArrayIndex == 0);
-            
-            using CpuDescHandle = D3D12_CPU_DESCRIPTOR_HANDLE;
-            using CommandListPtr = ComPtr<ID3D12GraphicsCommandList>;
-            RenderViewImpl(layerView, swapchainImages[viewID], swapchainFormat, [&]
-            (
-                const CommandListPtr& cmdList,
-                const CpuDescHandle& renderTargetView,
-                const CpuDescHandle& depthStencilView,
-                SwapchainImageContext& swapchainContext
-            )
+
+            // Clear swapchain and depth buffer. NOTE: This will clear the entire render target view, not just the specified view.
+            cmdList->ClearRenderTargetView(renderTargetView, ALXR::ClearColors[ClearColorIndex(ptMode)], 0, nullptr);
+            cmdList->ClearDepthStencilView(depthStencilView, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+
+            const D3D12_CPU_DESCRIPTOR_HANDLE renderTargets[] = { renderTargetView };
+            cmdList->OMSetRenderTargets((UINT)std::size(renderTargets), renderTargets, true, &depthStencilView);
+
+            // Set shaders and constant buffers.
+            const ALXR::ViewProjectionConstantBuffer viewProjection{
+                .ViewProjection = MakeViewProjMatrix(layerView),
+                .ViewID = 0,
+            };
+            ID3D12Resource* const viewProjectionCBuffer = swapchainContext.GetViewProjectionCBuffer();
             {
-                // Clear swapchain and depth buffer. NOTE: This will clear the entire render target view, not just the specified view.
-                cmdList->ClearRenderTargetView(renderTargetView, ALXR::ClearColors[ClearColorIndex(ptMode)], 0, nullptr);
-                cmdList->ClearDepthStencilView(depthStencilView, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+                constexpr const D3D12_RANGE NoReadRange{ 0, 0 };
+                void* data = nullptr;
+                CHECK_HRCMD(viewProjectionCBuffer->Map(0, &NoReadRange, &data));
+                assert(data != nullptr);
+                std::memcpy(data, &viewProjection, sizeof(viewProjection));
+                viewProjectionCBuffer->Unmap(0, nullptr);
+            }
+            cmdList->SetGraphicsRootConstantBufferView(RootParamIndex::ViewProjTransform, viewProjectionCBuffer->GetGPUVirtualAddress());
 
-                const D3D12_CPU_DESCRIPTOR_HANDLE renderTargets[] = { renderTargetView };
-                cmdList->OMSetRenderTargets((UINT)std::size(renderTargets), renderTargets, true, &depthStencilView);
+            RenderVisCubes(cubes, swapchainContext, cmdList);
 
-                // Set shaders and constant buffers.
-                const ALXR::ViewProjectionConstantBuffer viewProjection{
-                    .ViewProjection = MakeViewProjMatrix(layerView),
-                    .ViewID = 0,
-                };
-                ID3D12Resource* const viewProjectionCBuffer = swapchainContext.GetViewProjectionCBuffer();
-                {
-                    constexpr const D3D12_RANGE NoReadRange{ 0, 0 };
-                    void* data = nullptr;
-                    CHECK_HRCMD(viewProjectionCBuffer->Map(0, &NoReadRange, &data));
-                    assert(data != nullptr);
-                    std::memcpy(data, &viewProjection, sizeof(viewProjection));
-                    viewProjectionCBuffer->Unmap(0, nullptr);
-                }
-                cmdList->SetGraphicsRootConstantBufferView(RootParamIndex::ViewProjTransform, viewProjectionCBuffer->GetGPUVirtualAddress());
-
-                RenderVisCubes(cubes, swapchainContext, cmdList);
-
-            }, RenderPipelineType::Default);
-        }
+        }, RenderPipelineType::Default);
     }
 
     void RenderVisCubes(const std::vector<Cube>& cubes, SwapchainImageContext& swapchainContext, const ComPtr<ID3D12GraphicsCommandList>& cmdList)
@@ -1125,8 +1365,8 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
     }
 
     void SignalFence() {
-        ++m_fenceValue;
-        CHECK_HRCMD(m_cmdQueue->Signal(m_fence.Get(), m_fenceValue));
+        ++m_frameFenceValue;
+        CHECK_HRCMD(m_cmdQueue->Signal(m_fence.Get(), m_frameFenceValue));
     }
 
     void CpuWaitForFence(uint64_t fenceValue) {
@@ -1141,7 +1381,7 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
 
     void WaitForGpu() {
         SignalFence();
-        CpuWaitForFence(m_fenceValue);
+        CpuWaitForFence(m_frameFenceValue);
     }
 
     void CreateVideoTextures
@@ -1583,8 +1823,11 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
         CHECK(m_isMultiViewSupported);
         using CpuDescHandle = D3D12_CPU_DESCRIPTOR_HANDLE;
         using CommandListPtr = ComPtr<ID3D12GraphicsCommandList>;
-        RenderViewImpl(layerViews[0], swapchainImage, swapchainFormat, [&]
+        std::array<const XrSwapchainImageBaseHeader*, 1> swapchainImages = { swapchainImage };
+        RenderViewImpl(layerViews, swapchainImages, swapchainFormat, [&]
         (
+            const std::uint32_t viewID,
+            const XrCompositionLayerProjectionView& layerView,
             const CommandListPtr& cmdList,
             const CpuDescHandle& renderTargetView,
             const CpuDescHandle& depthStencilView,
@@ -1623,58 +1866,57 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
         const std::int64_t swapchainFormat, const PassthroughMode newMode /*= PassthroughMode::None*/
     ) override
     {
-        for (std::uint32_t viewID = 0; viewID < layerViews.size(); ++viewID) {
-            const auto& layerView = layerViews[viewID];
+        using CpuDescHandle = D3D12_CPU_DESCRIPTOR_HANDLE;
+        using CommandListPtr = ComPtr<ID3D12GraphicsCommandList>;
+        RenderViewImpl(layerViews, swapchainImages, swapchainFormat, [&]
+        (
+            const std::uint32_t viewID,
+            const XrCompositionLayerProjectionView& layerView,
+            const CommandListPtr& cmdList,
+            const CpuDescHandle& renderTargetView,
+            const CpuDescHandle& depthStencilView,
+            SwapchainImageContext& swapchainContext
+        ) {
             CHECK(layerView.subImage.imageArrayIndex == 0);
-            using CpuDescHandle = D3D12_CPU_DESCRIPTOR_HANDLE;
-            using CommandListPtr = ComPtr<ID3D12GraphicsCommandList>;
-            RenderViewImpl(layerView, swapchainImages[viewID], swapchainFormat, [&]
-            (
-                const CommandListPtr& cmdList,
-                const CpuDescHandle& renderTargetView,
-                const CpuDescHandle& depthStencilView,
-                SwapchainImageContext& swapchainContext
-            )
+
+            if (currentTextureIdx == std::size_t(-1))
+                return;
+            const auto& videoTex = m_videoTextures[currentTextureIdx];
+
+            ID3D12DescriptorHeap* const ppHeaps[] = { m_srvHeap.Get() };
+            cmdList->SetDescriptorHeaps((UINT)std::size(ppHeaps), ppHeaps);
+            cmdList->SetGraphicsRootDescriptorTable(RootParamIndex::LumaTexture, videoTex.lumaGpuHandle); // Second texture will be (texture1+1)
+            cmdList->SetGraphicsRootDescriptorTable(RootParamIndex::ChromaTexture, videoTex.chromaGpuHandle);
+            if (m_is3PlaneFormat)
+                cmdList->SetGraphicsRootDescriptorTable(RootParamIndex::ChromaVTexture, videoTex.chromaVGpuHandle);
+            if (m_fovDecodeParams)
+                cmdList->SetGraphicsRootConstantBufferView(RootParamIndex::FoveatedDecodeParams, swapchainContext.GetFoveationParamCBuffer()->GetGPUVirtualAddress());
+
+            // Set shaders and constant buffers.
+            ID3D12Resource* const viewProjectionCBuffer = swapchainContext.GetViewProjectionCBuffer();
             {
-                if (currentTextureIdx == std::size_t(-1))
-                    return;
-                const auto& videoTex = m_videoTextures[currentTextureIdx];
+                const ALXR::ViewProjectionConstantBuffer viewProjection{ .ViewID = viewID };
+                constexpr const D3D12_RANGE NoReadRange{ 0, 0 };
+                void* data = nullptr;
+                CHECK_HRCMD(viewProjectionCBuffer->Map(0, &NoReadRange, &data));
+                assert(data != nullptr);
+                std::memcpy(data, &viewProjection, sizeof(viewProjection));
+                viewProjectionCBuffer->Unmap(0, nullptr);
+            }
+            cmdList->SetGraphicsRootConstantBufferView(RootParamIndex::ViewProjTransform, viewProjectionCBuffer->GetGPUVirtualAddress());
 
-                ID3D12DescriptorHeap* const ppHeaps[] = { m_srvHeap.Get() };
-                cmdList->SetDescriptorHeaps((UINT)std::size(ppHeaps), ppHeaps);
-                cmdList->SetGraphicsRootDescriptorTable(RootParamIndex::LumaTexture, videoTex.lumaGpuHandle); // Second texture will be (texture1+1)
-                cmdList->SetGraphicsRootDescriptorTable(RootParamIndex::ChromaTexture, videoTex.chromaGpuHandle);
-                if (m_is3PlaneFormat)
-                    cmdList->SetGraphicsRootDescriptorTable(RootParamIndex::ChromaVTexture, videoTex.chromaVGpuHandle);
-                if (m_fovDecodeParams)
-                    cmdList->SetGraphicsRootConstantBufferView(RootParamIndex::FoveatedDecodeParams, swapchainContext.GetFoveationParamCBuffer()->GetGPUVirtualAddress());
+            // Clear swapchain and depth buffer. NOTE: This will clear the entire render target view, not just the specified view.
+            cmdList->ClearRenderTargetView(renderTargetView, ALXR::VideoClearColors[ClearColorIndex(newMode)], 0, nullptr);
+            cmdList->ClearDepthStencilView(depthStencilView, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
-                // Set shaders and constant buffers.
-                ID3D12Resource* const viewProjectionCBuffer = swapchainContext.GetViewProjectionCBuffer();
-                {
-                    const ALXR::ViewProjectionConstantBuffer viewProjection{ .ViewID = viewID };
-                    constexpr const D3D12_RANGE NoReadRange{ 0, 0 };
-                    void* data = nullptr;
-                    CHECK_HRCMD(viewProjectionCBuffer->Map(0, &NoReadRange, &data));
-                    assert(data != nullptr);
-                    std::memcpy(data, &viewProjection, sizeof(viewProjection));
-                    viewProjectionCBuffer->Unmap(0, nullptr);
-                }
-                cmdList->SetGraphicsRootConstantBufferView(RootParamIndex::ViewProjTransform, viewProjectionCBuffer->GetGPUVirtualAddress());
+            const D3D12_CPU_DESCRIPTOR_HANDLE renderTargets[] = { renderTargetView };
+            cmdList->OMSetRenderTargets((UINT)std::size(renderTargets), renderTargets, true, &depthStencilView);
 
-                // Clear swapchain and depth buffer. NOTE: This will clear the entire render target view, not just the specified view.
-                cmdList->ClearRenderTargetView(renderTargetView, ALXR::VideoClearColors[ClearColorIndex(newMode)], 0, nullptr);
-                cmdList->ClearDepthStencilView(depthStencilView, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+            cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-                const D3D12_CPU_DESCRIPTOR_HANDLE renderTargets[] = { renderTargetView };
-                cmdList->OMSetRenderTargets((UINT)std::size(renderTargets), renderTargets, true, &depthStencilView);
-
-                cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-                // Draw Video Quad
-                cmdList->DrawInstanced(3, 1, 0, 0);
-            }, RenderPipelineType::Video, newMode);
-        }
+            // Draw Video Quad
+            cmdList->DrawInstanced(3, 1, 0, 0);
+        }, RenderPipelineType::Video, newMode);
     }
 
     virtual inline void SetEnvironmentBlendMode(const XrEnvironmentBlendMode newMode) override {
@@ -1693,11 +1935,162 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
             m_VideoPipelineStates.clear();
         }
         if (newFovDecParm) {
-            for (auto& swapchainCtx : m_swapchainImageContexts)
-                swapchainCtx.SetFoveationDecodeData(*newFovDecParm);
+            for (auto swapchainCtx : m_swapchainImageContexts)
+                swapchainCtx->SetFoveationDecodeData(*newFovDecParm);
         }
         m_fovDecodeParams = newFovDecParm ?
             std::make_shared<ALXR::FoveatedDecodeParams>(*newFovDecParm) : nullptr;
+    }
+
+    virtual bool SetVisibilityMask(uint32_t viewIndex, const struct XrVisibilityMaskKHR& visibilityMask) override {
+
+        if (!m_enableVisibilityMask ||
+            visibilityMask.vertices == nullptr ||
+            visibilityMask.indices == nullptr ||
+            visibilityMask.indexCountOutput == 0 ||
+            visibilityMask.vertexCountOutput == 0 ||
+            m_swapchainImageContexts.empty() ||
+            m_device == nullptr) {
+            return false;
+        }
+
+        const auto swapchainImageCtx = m_swapchainImageContexts[0];
+        if (swapchainImageCtx == nullptr) {
+            Log::Write(Log::Level::Error, "Failed to set visibility mask, swapchainImageContext is not initialized.");
+            return false;
+        }
+
+        if (m_visibilityMaskState.rtvHeap == nullptr) {
+            constexpr const D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {
+                .Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+                .NumDescriptors = 2,
+                .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE
+            };
+            if (FAILED(m_device->CreateDescriptorHeap(&heapDesc, __uuidof(ID3D12DescriptorHeap),
+                reinterpret_cast<void**>(m_visibilityMaskState.rtvHeap.ReleaseAndGetAddressOf())))) {
+                Log::Write(Log::Level::Error, "Failed to set visibility mask, could not create rtv-heap");
+                return false;
+            }
+        }
+
+        if (m_visibilityMaskState.dsvHeap == nullptr) {
+            constexpr const D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {
+                .Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV,
+                .NumDescriptors = 2,
+                .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE
+            };
+            if (FAILED(m_device->CreateDescriptorHeap(&heapDesc, __uuidof(ID3D12DescriptorHeap),
+                reinterpret_cast<void**>(m_visibilityMaskState.dsvHeap.ReleaseAndGetAddressOf())))) {
+                Log::Write(Log::Level::Error, "Failed to set visibility mask, could not create dsv-heap");
+                return false;
+            }
+        }
+
+        if (m_visibilityMaskState.projectionCBuffer == NULL) {
+            constexpr const std::uint32_t projPerViewSize = AlignTo<D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT>(sizeof(DirectX::XMFLOAT4X4A));
+            m_visibilityMaskState.projectionCBuffer = CreateBuffer(m_device.Get(), projPerViewSize * 2, D3D12_HEAP_TYPE_UPLOAD);
+            assert(m_visibilityMaskState.projectionCBuffer != nullptr);
+            m_visibilityMaskState.projectionCBuffer->SetName(L"VisibilityMask_ProjectionCBuffer");
+        }
+
+        if (m_visibilityMaskState.pipelineState == nullptr) {
+            constexpr static const std::array<const D3D12_INPUT_ELEMENT_DESC, 1> inputElementDescs = {
+                D3D12_INPUT_ELEMENT_DESC {
+                    "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+                    D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0
+                },
+            };
+            auto& vmPipelineState = m_visibilityMaskState.pipelineState;
+            const DXGI_FORMAT swapchainFormat = swapchainImageCtx->color_format;
+            const auto visiblityShaders = m_coreShaders.GetVisibilityMaskCodes();
+            D3D12_GRAPHICS_PIPELINE_STATE_DESC pipelineStateDesc{ .pRootSignature = m_rootSignature.Get() };
+            MakeDefaultPipelineStateDesc(pipelineStateDesc, swapchainFormat, visiblityShaders, inputElementDescs, true);
+            
+            auto& rasterizerState = pipelineStateDesc.RasterizerState;
+            rasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+            rasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+            rasterizerState.FrontCounterClockwise = TRUE;
+
+            constexpr const D3D12_DEPTH_STENCILOP_DESC stencilOpDesc = {
+                .StencilFailOp = D3D12_STENCIL_OP_KEEP,      // Replace stencil value if stencil test fails,
+                .StencilDepthFailOp = D3D12_STENCIL_OP_KEEP, // Replace stencil value if depth test fails (depth test disabled)
+                .StencilPassOp = D3D12_STENCIL_OP_REPLACE,   // Replace stencil value if stencil test passes
+                .StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS, // Always pass stencil test (fill buffer)
+            };
+            constexpr const D3D12_DEPTH_STENCIL_DESC stencilDesc = {
+                .DepthEnable = FALSE,
+                .DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO,
+                .DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS,
+                .StencilEnable = TRUE,
+                .StencilReadMask = D3D12_DEFAULT_STENCIL_READ_MASK,  // Allow reading from all stencil bit
+                .StencilWriteMask = D3D12_DEFAULT_STENCIL_WRITE_MASK, // Allow writing to all stencil bit
+                .FrontFace = stencilOpDesc,
+                .BackFace = stencilOpDesc,
+            };
+            pipelineStateDesc.DepthStencilState = stencilDesc;
+            if (FAILED(m_device->CreateGraphicsPipelineState(&pipelineStateDesc, __uuidof(ID3D12PipelineState),
+                reinterpret_cast<void**>(vmPipelineState.ReleaseAndGetAddressOf())))) {
+                Log::Write(Log::Level::Error, "Failed to set visibility mask, could not create pipeline-state");
+                return false;
+            }
+        }
+
+        ComPtr<ID3D12GraphicsCommandList> cmdList{};
+        if (FAILED(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_commandAllocator.Get(), nullptr,
+            __uuidof(ID3D12GraphicsCommandList),
+            reinterpret_cast<void**>(cmdList.ReleaseAndGetAddressOf())))) {
+            Log::Write(Log::Level::Error, "Failed to set visibility mask, could not create command-list");
+            return false;
+        }
+
+        auto& vbuff = m_visibilityMaskState.vertexBuffers[viewIndex];
+
+        ComPtr<ID3D12Resource> vertexBufferUpload{};
+        vbuff.vertexCount = 0;
+        const std::uint32_t vertexBufferSize = visibilityMask.vertexCountOutput * sizeof(XrVector2f);
+        if (vbuff.vb = CreateBuffer(m_device.Get(), vertexBufferSize, D3D12_HEAP_TYPE_DEFAULT))
+        {
+            vertexBufferUpload = CreateBuffer(m_device.Get(), vertexBufferSize, D3D12_HEAP_TYPE_UPLOAD);
+            void* data = nullptr;
+            const D3D12_RANGE readRange{ 0, 0 };
+            if (FAILED(vertexBufferUpload->Map(0, &readRange, &data))) {
+                Log::Write(Log::Level::Error, "Failed to set visibility mask, could not map vertex buffer to host");
+                return false;
+            }
+            memcpy(data, visibilityMask.vertices, vertexBufferSize);
+            vertexBufferUpload->Unmap(0, nullptr);
+            cmdList->CopyBufferRegion(vbuff.vb.Get(), 0, vertexBufferUpload.Get(), 0, vertexBufferSize);
+            vbuff.vertexCount = visibilityMask.vertexCountOutput;
+        } else return false;
+
+        ComPtr<ID3D12Resource> indexBufferUpload{};
+        vbuff.indexCount = 0;
+        const std::uint32_t indexBufferSize = visibilityMask.indexCountOutput * sizeof(std::uint32_t);
+        if (vbuff.ib = CreateBuffer(m_device.Get(), indexBufferSize, D3D12_HEAP_TYPE_DEFAULT))
+        {
+            indexBufferUpload = CreateBuffer(m_device.Get(), indexBufferSize, D3D12_HEAP_TYPE_UPLOAD);
+            void* data = nullptr;
+            const D3D12_RANGE readRange{ 0, 0 };
+            if (FAILED(indexBufferUpload->Map(0, &readRange, &data))) {
+                Log::Write(Log::Level::Error, "Failed to set visibility mask, could not map index buffer to host");
+                return false;
+            }
+            memcpy(data, visibilityMask.indices, indexBufferSize);
+            indexBufferUpload->Unmap(0, nullptr);
+            cmdList->CopyBufferRegion(vbuff.ib.Get(), 0, indexBufferUpload.Get(), 0, indexBufferSize);
+            vbuff.indexCount = visibilityMask.indexCountOutput;
+        } else return false;
+
+        if (FAILED(cmdList->Close())) {
+            Log::Write(Log::Level::Error, "Failed to set visibility mask, could not close resource create command-list");
+            return false;
+        }
+        ID3D12CommandList* cmdLists[] = { cmdList.Get() };
+        m_cmdQueue->ExecuteCommandLists((UINT)std::size(cmdLists), cmdLists);
+
+        WaitForGpu();
+
+        return m_visibilityMaskState.isDirty = true;
     }
 
     virtual inline bool IsMultiViewEnabled() const override {
@@ -1714,10 +2107,16 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
     LUID             m_dx12deviceluid{};
     ComPtr<ID3D12CommandQueue> m_cmdQueue;
     ComPtr<ID3D12Fence> m_fence;
-    uint64_t m_fenceValue = 0;
+    std::atomic_uint64_t m_frameFenceValue{ 0 };
     HANDLE m_fenceEvent = INVALID_HANDLE_VALUE;
-    std::list<SwapchainImageContext> m_swapchainImageContexts;
-    std::map<const XrSwapchainImageBaseHeader*, SwapchainImageContext*> m_swapchainImageContextMap;
+    
+    using SwapchainImageContextPtr = std::shared_ptr<SwapchainImageContext>;
+    using SwapchainImageContextWeakPtr = std::weak_ptr<SwapchainImageContext>;
+    std::vector<SwapchainImageContextPtr> m_swapchainImageContexts;
+    
+    using SwapchainImageContextMap = std::unordered_map<const XrSwapchainImageBaseHeader*, SwapchainImageContextWeakPtr>;
+    SwapchainImageContextMap m_swapchainImageContextMap;
+
     XrGraphicsBindingD3D12KHR m_graphicsBinding{
         .type = XR_TYPE_GRAPHICS_BINDING_D3D12_KHR,
         .next = nullptr
@@ -1726,9 +2125,33 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
     std::map<DXGI_FORMAT, ComPtr<ID3D12PipelineState>> m_pipelineStates;
     ComPtr<ID3D12Resource> m_cubeVertexBuffer;
     ComPtr<ID3D12Resource> m_cubeIndexBuffer;
-
+    ComPtr<ID3D12CommandAllocator> m_commandAllocator{};
+    
     static_assert(XR_ENVIRONMENT_BLEND_MODE_OPAQUE == 1);
     std::size_t m_clearColorIndex{ (XR_ENVIRONMENT_BLEND_MODE_OPAQUE - 1) };
+    struct VisibilityMaskData final {
+        ComPtr<ID3D12DescriptorHeap> rtvHeap{};
+        ComPtr<ID3D12DescriptorHeap> dsvHeap{};
+        ComPtr<ID3D12Resource> projectionCBuffer{};
+        struct VertexBuffer final {
+            ComPtr<ID3D12Resource> vb{};
+            ComPtr<ID3D12Resource> ib{};
+            uint32_t vertexCount{ 0 };
+            uint32_t indexCount{ 0 };
+        };
+        std::array<VertexBuffer, 2> vertexBuffers{};
+        ComPtr<ID3D12PipelineState> pipelineState{};
+        std::atomic_bool isDirty{ false };
+        bool IsValid() const {
+            if (pipelineState == nullptr)
+                return false;
+            for (size_t idx = 0; idx < vertexBuffers.size(); ++idx) {
+                if (vertexBuffers[idx].ib == nullptr)
+                    return false;
+            }
+            return true;
+        }
+    } m_visibilityMaskState;
     ////////////////////////////////////////////////////////////////////////
 
     D3D12FenceEvent                 m_texRendereComplete {};
@@ -1785,6 +2208,7 @@ struct D3D12GraphicsPlugin final : public IGraphicsPlugin {
     FoveatedDecodeParamsPtr m_fovDecodeParams{};
 
     bool m_isMultiViewSupported = false;
+    bool m_enableVisibilityMask = false;
 };
 
 }  // namespace
