@@ -572,7 +572,9 @@ inline void InteractionManager::PollActions(InteractionManager::ControllerInfoLi
         .countActiveActionSets = 1,
         .activeActionSets = &activeActionSet
     };
-    CHECK_XRCMD(xrSyncActions(m_session, &syncInfo));
+    if (XR_FAILED(xrSyncActions(m_session, &syncInfo))) {
+        return;
+    }
 
     if (m_eyeGazeInteraction)
         m_eyeGazeInteraction->PollActions();
