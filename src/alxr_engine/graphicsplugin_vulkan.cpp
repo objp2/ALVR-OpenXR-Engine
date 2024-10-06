@@ -461,7 +461,7 @@ struct CmdBuffer {
         constexpr const VkCommandBufferBeginInfo cmdBeginInfo {
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
             .pNext = nullptr,
-            .flags = 0
+            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
         };
         CHECK_VKCMD(vkBeginCommandBuffer(buf, &cmdBeginInfo));
         SetState(CmdBufferState::Recording);
@@ -2167,7 +2167,7 @@ struct DepthBuffer {
         CHECK_VKCMD(vkBindImageMemory(device, depthImage, depthMemory, 0));
     }
 
-    void TransitionLayout(CmdBuffer* cmdBuffer, VkImageLayout newLayout) {
+    void TransitionLayout(CmdBuffer& cmdBuffer, VkImageLayout newLayout) {
         if (newLayout == m_vkLayout)
             return;
         
@@ -2185,7 +2185,7 @@ struct DepthBuffer {
             .image = depthImage,
             .subresourceRange { aspectMask, 0, 1, 0, 1},
         };
-        vkCmdPipelineBarrier(cmdBuffer->buf, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, 0, 0, nullptr,
+        vkCmdPipelineBarrier(cmdBuffer.buf, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, 0, 0, nullptr,
                              0, nullptr, 1, &depthBarrier);
 
         m_vkLayout = newLayout;
@@ -3063,7 +3063,7 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
     };
     constexpr static const std::array<const ClearValueT, 3> ConstClearValues{
         OpaqueClear {
-            VkClearValue {.color {.float32 = { DarkGraySlate[0], DarkGraySlate[1], DarkGraySlate[2], 0.2f}}},
+            VkClearValue {.color {.float32 = { DarkGraySlate[0], DarkGraySlate[1], DarkGraySlate[2], 0.f}}},
             ClearDepthStencilValue
         },
         AdditiveClear {
@@ -3085,7 +3085,7 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
             // for runtimes which only support passthrough via explicit extensions such as XR_FB_passthrough & XR_HTC_passthrough
             // and only have the an Opaque blend, the alpha channel is relevent/used in this case.
             // 
-            VkClearValue {.color {.float32 = { CClear[0], CClear[1], CClear[2], 0.2f }}},
+            VkClearValue {.color {.float32 = { CClear[0], CClear[1], CClear[2], 0.f }}},
             ClearDepthStencilValue
         },
         AdditiveClear {
@@ -3263,7 +3263,7 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
 
             std::uint32_t imageIndex{0};
             auto& swapchainContext = GetSwapchainImageContext(swapchainImage, imageIndex);
-            swapchainContext.depthBuffer.TransitionLayout(&m_cmdBuffer, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+            swapchainContext.depthBuffer.TransitionLayout(m_cmdBuffer, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
             const auto& clearValues = ConstClearValues[ClearValueIndex(newMode)];
             VkRenderPassBeginInfo renderPassBeginInfo{
@@ -3277,33 +3277,35 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
 
             vkCmdBeginRenderPass(m_cmdBuffer.buf, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-            vkCmdBindPipeline(m_cmdBuffer.buf, VK_PIPELINE_BIND_POINT_GRAPHICS, swapchainContext.pipe.pipe);
+            if (cubes.size() > 0) {
+                vkCmdBindPipeline(m_cmdBuffer.buf, VK_PIPELINE_BIND_POINT_GRAPHICS, swapchainContext.pipe.pipe);
 
-            // Bind index and vertex buffers
-            vkCmdBindIndexBuffer(m_cmdBuffer.buf, m_drawBuffer.idxBuf, 0, VK_INDEX_TYPE_UINT16);
-            constexpr const VkDeviceSize offset = 0;
-            vkCmdBindVertexBuffers(m_cmdBuffer.buf, 0, 1, &m_drawBuffer.vtxBuf, &offset);
+                // Bind index and vertex buffers
+                vkCmdBindIndexBuffer(m_cmdBuffer.buf, m_drawBuffer.idxBuf, 0, VK_INDEX_TYPE_UINT16);
+                constexpr const VkDeviceSize offset = 0;
+                vkCmdBindVertexBuffers(m_cmdBuffer.buf, 0, 1, &m_drawBuffer.vtxBuf, &offset);
 
-            // Compute the view-projection transform.
-            // Note all matrixes (including OpenXR's) are column-major, right-handed.
-            std::array<Eigen::Matrix4f,2> vps{};
-            for (std::size_t viewIndex = 0; viewIndex < layerViews.size(); ++viewIndex) {
-                vps[viewIndex] = MakeViewProjMatrix(layerViews[viewIndex]);
-            }
-
-            // Render each cube
-            for (const Cube& cube : cubes) {
-                // Compute the model-view-projection transform and push it.
-                MultiViewProjectionUniform mvps;
+                // Compute the view-projection transform.
+                // Note all matrixes (including OpenXR's) are column-major, right-handed.
+                std::array<Eigen::Matrix4f, 2> vps{};
                 for (std::size_t viewIndex = 0; viewIndex < layerViews.size(); ++viewIndex) {
-                    const Eigen::Affine3f model = ALXR::CreateTRS(cube.Pose, cube.Scale);
-                    const Eigen::Matrix4f mvp = (vps[viewIndex] * model).matrix();
-                    std::memcpy(mvps.mvp[viewIndex], mvp.data(), sizeof(f32x16));
+                    vps[viewIndex] = MakeViewProjMatrix(layerViews[viewIndex]);
                 }
-                vkCmdPushConstants(m_cmdBuffer.buf, m_pipelineLayout.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MultiViewProjectionUniform), &mvps);
 
-                // Draw the cube.
-                vkCmdDrawIndexed(m_cmdBuffer.buf, m_drawBuffer.count.idx, 1, 0, 0, 0);
+                // Render each cube
+                for (const Cube& cube : cubes) {
+                    // Compute the model-view-projection transform and push it.
+                    MultiViewProjectionUniform mvps;
+                    for (std::size_t viewIndex = 0; viewIndex < layerViews.size(); ++viewIndex) {
+                        const Eigen::Affine3f model = ALXR::CreateTRS(cube.Pose, cube.Scale);
+                        const Eigen::Matrix4f mvp = (vps[viewIndex] * model).matrix();
+                        std::memcpy(mvps.mvp[viewIndex], mvp.data(), sizeof(f32x16));
+                    }
+                    vkCmdPushConstants(m_cmdBuffer.buf, m_pipelineLayout.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MultiViewProjectionUniform), &mvps);
+
+                    // Draw the cube.
+                    vkCmdDrawIndexed(m_cmdBuffer.buf, m_drawBuffer.count.idx, 1, 0, 0, 0);
+                }
             }
 
             vkCmdEndRenderPass(m_cmdBuffer.buf);
@@ -3328,7 +3330,7 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
 
                 std::uint32_t imageIndex{0};
                 auto& swapchainContext = GetSwapchainImageContext(swapchainImages[viewID], imageIndex);
-                swapchainContext.depthBuffer.TransitionLayout(&m_cmdBuffer, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+                swapchainContext.depthBuffer.TransitionLayout(m_cmdBuffer, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
                 const auto& clearValues = ConstClearValues[ClearValueIndex(newMode)];
                 VkRenderPassBeginInfo renderPassBeginInfo{
@@ -3341,28 +3343,29 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
                 swapchainContext.BindRenderTarget(imageIndex, /*out*/ renderPassBeginInfo);
 
                 vkCmdBeginRenderPass(m_cmdBuffer.buf, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-                vkCmdBindPipeline(m_cmdBuffer.buf, VK_PIPELINE_BIND_POINT_GRAPHICS, swapchainContext.pipe.pipe);
+                if (cubes.size() > 0) {
+                    vkCmdBindPipeline(m_cmdBuffer.buf, VK_PIPELINE_BIND_POINT_GRAPHICS, swapchainContext.pipe.pipe);
 
-                // Bind index and vertex buffers
-                vkCmdBindIndexBuffer(m_cmdBuffer.buf, m_drawBuffer.idxBuf, 0, VK_INDEX_TYPE_UINT16);
-                constexpr const VkDeviceSize offset = 0;
-                vkCmdBindVertexBuffers(m_cmdBuffer.buf, 0, 1, &m_drawBuffer.vtxBuf, &offset);
+                    // Bind index and vertex buffers
+                    vkCmdBindIndexBuffer(m_cmdBuffer.buf, m_drawBuffer.idxBuf, 0, VK_INDEX_TYPE_UINT16);
+                    constexpr const VkDeviceSize offset = 0;
+                    vkCmdBindVertexBuffers(m_cmdBuffer.buf, 0, 1, &m_drawBuffer.vtxBuf, &offset);
 
-                // Compute the view-projection transform.
-                // Note all matrixes (including OpenXR's) are column-major, right-handed.
-                const Eigen::Matrix4f vp = MakeViewProjMatrix(layerView);
+                    // Compute the view-projection transform.
+                    // Note all matrixes (including OpenXR's) are column-major, right-handed.
+                    const Eigen::Matrix4f vp = MakeViewProjMatrix(layerView);
 
-                // Render each cube
-                for (const Cube& cube : cubes) {
-                    // Compute the model-view-projection transform and push it.
-                    const Eigen::Affine3f model = ALXR::CreateTRS(cube.Pose, cube.Scale);
-                    alignas(16) const Eigen::Matrix4f mvp = (vp * model).matrix();
-                    vkCmdPushConstants(m_cmdBuffer.buf, m_pipelineLayout.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ViewProjectionUniform), mvp.data());
+                    // Render each cube
+                    for (const Cube& cube : cubes) {
+                        // Compute the model-view-projection transform and push it.
+                        const Eigen::Affine3f model = ALXR::CreateTRS(cube.Pose, cube.Scale);
+                        alignas(16) const Eigen::Matrix4f mvp = (vp * model).matrix();
+                        vkCmdPushConstants(m_cmdBuffer.buf, m_pipelineLayout.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ViewProjectionUniform), mvp.data());
 
-                    // Draw the cube.
-                    vkCmdDrawIndexed(m_cmdBuffer.buf, m_drawBuffer.count.idx, 1, 0, 0, 0);
+                        // Draw the cube.
+                        vkCmdDrawIndexed(m_cmdBuffer.buf, m_drawBuffer.count.idx, 1, 0, 0, 0);
+                    }
                 }
-
                 vkCmdEndRenderPass(m_cmdBuffer.buf);
             }
         });
@@ -4379,7 +4382,7 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
             
             std::uint32_t imageIndex{ 0 };
             auto& swapchainContext = GetSwapchainImageContext(swapchainImage, imageIndex);
-            swapchainContext.depthBuffer.TransitionLayout(&m_cmdBuffer, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+            swapchainContext.depthBuffer.TransitionLayout(m_cmdBuffer, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
             const auto& clearValues = VideoClearValues[ClearValueIndex(newMode)];
             VkRenderPassBeginInfo renderPassBeginInfo{
@@ -4431,7 +4434,7 @@ struct VulkanGraphicsPlugin : public IGraphicsPlugin {
                 
                 std::uint32_t imageIndex{ 0 };
                 auto& swapchainContext = GetSwapchainImageContext(swapchainImages[viewID], imageIndex);
-                swapchainContext.depthBuffer.TransitionLayout(&m_cmdBuffer, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+                swapchainContext.depthBuffer.TransitionLayout(m_cmdBuffer, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
                 const auto& clearValues = VideoClearValues[ClearValueIndex(mode)];
                 VkRenderPassBeginInfo renderPassBeginInfo{
