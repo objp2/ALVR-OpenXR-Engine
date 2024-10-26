@@ -341,6 +341,7 @@ struct OpenXrProgram final : IOpenXrProgram {
         : m_options(options), m_platformPlugin(platformPlugin), m_graphicsPlugin{ nullptr }
         , xrLocalDimmingFrameEndInfoMETA(make_local_dimming_info(!options->DisableLocalDimming))
     {
+        assert(m_options);
         LogLayersAndExtensions();
         
         const bool headlessRequested = m_options && m_options->EnableHeadless();
@@ -363,7 +364,18 @@ struct OpenXrProgram final : IOpenXrProgram {
                 default: return std::make_tuple("XR_KHR_vulkan_enable2"sv, "Vulkan2"sv);
                 }
             };
-            for (size_t apiIndex = ALXRGraphicsApi::Vulkan2; apiIndex < size_t(ALXRGraphicsApi::ApiCount); ++apiIndex) {
+            using ALXRGraphicsApiList = std::array<ALXRGraphicsApi, size_t(ALXRGraphicsApi::ApiCount)>;
+            static constexpr const ALXRGraphicsApiList GApiListSelectionOrder =
+                { ALXRGraphicsApi::Vulkan2, ALXRGraphicsApi::Vulkan, ALXRGraphicsApi::D3D12, ALXRGraphicsApi::D3D11, }; 
+            static constexpr const ALXRGraphicsApiList WinGApiListSelectionOrder =
+                { ALXRGraphicsApi::D3D12, ALXRGraphicsApi::D3D11, ALXRGraphicsApi::Vulkan2, ALXRGraphicsApi::Vulkan, };
+#ifdef XR_USE_PLATFORM_WIN32
+            // Until Vulkan-D3D11VA interop is improved and/or Vulkan-video exts (via ffmpeg) are supported, use different selection order prioritizing D3D apis.
+            const auto& gapiListSelectionOrder = !options->SimulateHeadless ? WinGApiListSelectionOrder : GApiListSelectionOrder;
+#else
+            const auto& gapiListSelectionOrder = GApiListSelectionOrder;
+#endif
+            for (const auto apiIndex : gapiListSelectionOrder) {
                 const auto& [ext_name, gapi] = to_graphics_api_str(static_cast<ALXRGraphicsApi>(apiIndex));
                 auto itr = m_supportedGraphicsContexts.find(ext_name);
                 if (itr != m_supportedGraphicsContexts.end() && itr->second) {
